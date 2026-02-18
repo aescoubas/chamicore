@@ -1,0 +1,95 @@
+# TEMPLATE: GoReleaser configuration for __SERVICE_FULL__
+# Copy this file and replace all __PLACEHOLDER__ markers with your service values.
+#
+# Docs: https://goreleaser.com/customization/
+
+version: 2
+
+project_name: __SERVICE_FULL__
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: __SERVICE__
+    main: ./cmd/service
+    binary: __SERVICE__
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+
+archives:
+  - id: __SERVICE__
+    builds:
+      - __SERVICE__
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+      - migrations/**/*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Other"
+      order: 999
+
+# TEMPLATE: Uncomment and configure Docker image publishing if desired.
+# dockers:
+#   - image_templates:
+#       - "openchami/__SERVICE_FULL__:{{ .Tag }}"
+#       - "openchami/__SERVICE_FULL__:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--build-arg=VERSION={{.Version}}"
+#       - "--build-arg=COMMIT={{.Commit}}"
+#       - "--build-arg=BUILD_DATE={{.Date}}"
+
+release:
+  # TEMPLATE: Configure for your Git hosting platform.
+  # For GitLab:
+  gitlab:
+    owner: openchami
+    name: __SERVICE_FULL__
+  # For GitHub (uncomment and remove gitlab section):
+  # github:
+  #   owner: openchami
+  #   name: __SERVICE_FULL__
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"

@@ -1,0 +1,30 @@
+[submodule "services/chamicore-smd"]
+	path = services/chamicore-smd
+	url = git@github.com:aescoubas/chamicore-smd.git
+[submodule "services/chamicore-bss"]
+	path = services/chamicore-bss
+	url = git@github.com:aescoubas/chamicore-bss.git
+[submodule "services/chamicore-cloud-init"]
+	path = services/chamicore-cloud-init
+	url = git@github.com:aescoubas/chamicore-cloud-init.git
+[submodule "services/chamicore-auth"]
+	path = services/chamicore-auth
+	url = git@github.com:aescoubas/chamicore-auth.git
+[submodule "services/chamicore-discovery"]
+	path = services/chamicore-discovery
+	url = git@github.com:aescoubas/chamicore-discovery.git
+[submodule "services/chamicore-kea-sync"]
+	path = services/chamicore-kea-sync
+	url = git@github.com:aescoubas/chamicore-kea-sync.git
+[submodule "services/chamicore-ui"]
+	path = services/chamicore-ui
+	url = git@github.com:aescoubas/chamicore-ui.git
+[submodule "services/chamicore-cli"]
+	path = services/chamicore-cli
+	url = git@github.com:aescoubas/chamicore-cli.git
+[submodule "shared/chamicore-lib"]
+	path = shared/chamicore-lib
+	url = git@github.com:aescoubas/chamicore-lib.git
+[submodule "shared/chamicore-deploy"]
+	path = shared/chamicore-deploy
+	url = git@github.com:aescoubas/chamicore-deploy.git

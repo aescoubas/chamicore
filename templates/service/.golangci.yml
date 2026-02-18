@@ -1,0 +1,112 @@
+# TEMPLATE: golangci-lint configuration for __SERVICE_FULL__
+# Copy this file and replace all __PLACEHOLDER__ markers with your service values.
+#
+# Run with: golangci-lint run ./...
+# Docs: https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+output:
+  formats:
+    - format: colored-line-number
+  sort-results: true
+
+linters:
+  enable:
+    # -- Bugs & correctness ------------------------------------------------
+    - errcheck          # Unchecked errors.
+    - govet             # Suspicious constructs (printf args, struct tags, etc.).
+    - staticcheck       # Comprehensive static analysis (SA*, S*, ST*, QF*).
+    - bodyclose         # HTTP response body not closed.
+    - nilerr            # Returning nil after checking err != nil.
+    - sqlclosecheck     # SQL rows/statements not closed.
+    - contextcheck      # Context not propagated properly.
+
+    # -- Style & consistency -----------------------------------------------
+    - gofmt             # Code is gofmt-formatted.
+    - goimports         # Imports are sorted and grouped.
+    - misspell          # Common English misspellings in comments and strings.
+    - revive            # Extensible linter (replacement for golint).
+    - unconvert         # Unnecessary type conversions.
+    - whitespace        # Leading/trailing whitespace in functions.
+    - nolintlint        # Malformed //nolint directives.
+
+    # -- Performance -------------------------------------------------------
+    - prealloc          # Slice declarations that could be preallocated.
+
+    # -- Security ----------------------------------------------------------
+    - gosec             # Security problems.
+
+  disable:
+    # Too noisy or opinionated for this project.
+    - wsl
+    - gochecknoglobals
+    - funlen
+    - lll
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    enable-all: true
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unreachable-code
+
+  gosec:
+    excludes:
+      # We intentionally use sql.Open with DSN from config.
+      - G101 # "Potential hardcoded credentials" — false positives on DSN vars.
+
+  misspell:
+    locale: US
+
+  goimports:
+    # TEMPLATE: Set the local prefix to your module path for import grouping.
+    local-prefixes: git.cscs.ch/openchami
+
+issues:
+  # Show all issues (do not limit per linter).
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files may use dot imports for testify.
+    - path: _test\.go
+      linters:
+        - revive
+      text: "dot-imports"
+
+    # Test files do not need to check errors on deferred Close().
+    - path: _test\.go
+      linters:
+        - errcheck
+      text: "Error return value of .*(Close|Flush)"

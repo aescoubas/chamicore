@@ -1,0 +1,528 @@
+# TEMPLATE: OpenAPI 3.0 specification for __SERVICE_FULL__
+# Copy this file and replace all __PLACEHOLDER__ markers with your service values.
+#
+# This spec demonstrates the standard Chamicore patterns:
+#   - Resource envelope (kind, apiVersion, metadata, spec)
+#   - RFC 9457 Problem Details for errors
+#   - Pagination (limit/offset query parameters)
+#   - ETag-based conditional requests (If-None-Match, If-Match)
+
+openapi: "3.0.3"
+
+info:
+  title: __SERVICE_FULL__ API
+  description: |
+    The __SERVICE_FULL__ service manages __RESOURCE_LOWER__ resources for the
+    OpenCHAMI system management platform.
+  version: "__API_VERSION__"
+  contact:
+    name: OpenCHAMI
+    url: https://git.cscs.ch/openchami/__SERVICE_FULL__
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:__PORT__
+    description: Local development
+
+tags:
+  - name: __RESOURCE_PLURAL__
+    description: Operations on __RESOURCE_LOWER__ resources
+  - name: health
+    description: Health and readiness probes
+
+paths:
+  # =========================================================================
+  # Health / Readiness / Version
+  # =========================================================================
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      operationId: getReady
+      security: []
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /version:
+    get:
+      tags: [health]
+      summary: Build version information
+      operationId: getVersion
+      security: []
+      responses:
+        "200":
+          description: Version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: "__SERVICE_FULL__"
+                  version:
+                    type: string
+                    example: "v1.0.0"
+
+  # =========================================================================
+  # __RESOURCE__ Collection
+  # =========================================================================
+  __API_PREFIX__/__RESOURCE_PLURAL__:
+    get:
+      tags: [__RESOURCE_PLURAL__]
+      summary: List __RESOURCE_LOWER__ resources
+      operationId: list__RESOURCE__s
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        # TEMPLATE: Add filter parameters here.
+        # - name: type
+        #   in: query
+        #   schema:
+        #     type: string
+        #   description: Filter by resource type
+      responses:
+        "200":
+          description: Paginated list of __RESOURCE_LOWER__ resources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/__RESOURCE__List"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      tags: [__RESOURCE_PLURAL__]
+      summary: Create a new __RESOURCE_LOWER__
+      operationId: create__RESOURCE__
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Create__RESOURCE__Request"
+      responses:
+        "201":
+          description: __RESOURCE__ created
+          headers:
+            Location:
+              description: URI of the created resource
+              schema:
+                type: string
+                example: "__API_PREFIX__/__RESOURCE_PLURAL__/550e8400-e29b-41d4-a716-446655440000"
+            ETag:
+              description: Entity tag for the created resource
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/__RESOURCE__Resource"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # =========================================================================
+  # __RESOURCE__ Single
+  # =========================================================================
+  __API_PREFIX__/__RESOURCE_PLURAL__/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Unique identifier (UUID) of the __RESOURCE_LOWER__
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags: [__RESOURCE_PLURAL__]
+      summary: Get a single __RESOURCE_LOWER__
+      operationId: get__RESOURCE__
+      parameters:
+        - name: If-None-Match
+          in: header
+          description: ETag from a previous response. Returns 304 if unchanged.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: __RESOURCE__ found
+          headers:
+            ETag:
+              description: Entity tag for conditional requests
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/__RESOURCE__Resource"
+        "304":
+          description: Not Modified (ETag matched)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [__RESOURCE_PLURAL__]
+      summary: Replace a __RESOURCE_LOWER__ (full update)
+      operationId: update__RESOURCE__
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: ETag from the last GET. Required for optimistic concurrency.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Update__RESOURCE__Request"
+      responses:
+        "200":
+          description: __RESOURCE__ updated
+          headers:
+            ETag:
+              description: New entity tag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/__RESOURCE__Resource"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+
+    patch:
+      tags: [__RESOURCE_PLURAL__]
+      summary: Partially update a __RESOURCE_LOWER__
+      operationId: patch__RESOURCE__
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Patch__RESOURCE__Request"
+      responses:
+        "200":
+          description: __RESOURCE__ patched
+          headers:
+            ETag:
+              description: New entity tag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/__RESOURCE__Resource"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [__RESOURCE_PLURAL__]
+      summary: Delete a __RESOURCE_LOWER__
+      operationId: delete__RESOURCE__
+      responses:
+        "204":
+          description: __RESOURCE__ deleted (no content)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+# ===========================================================================
+# Components
+# ===========================================================================
+components:
+  # -------------------------------------------------------------------------
+  # Security Schemes
+  # -------------------------------------------------------------------------
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # -------------------------------------------------------------------------
+  # Parameters
+  # -------------------------------------------------------------------------
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return (1-200, default 50)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip for pagination
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+    # -- Resource envelope (single) ----------------------------------------
+    __RESOURCE__Resource:
+      type: object
+      required: [kind, apiVersion, metadata, spec]
+      properties:
+        kind:
+          type: string
+          example: "__RESOURCE__"
+        apiVersion:
+          type: string
+          example: "__API_VERSION__"
+        metadata:
+          $ref: "#/components/schemas/ResourceMetadata"
+        spec:
+          $ref: "#/components/schemas/__RESOURCE__"
+
+    # -- Resource envelope (list) ------------------------------------------
+    __RESOURCE__List:
+      type: object
+      required: [kind, apiVersion, metadata, items]
+      properties:
+        kind:
+          type: string
+          example: "__RESOURCE__List"
+        apiVersion:
+          type: string
+          example: "__API_VERSION__"
+        metadata:
+          $ref: "#/components/schemas/ListMetadata"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/__RESOURCE__"
+
+    # -- Metadata ----------------------------------------------------------
+    ResourceMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ListMetadata:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          example: 42
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+
+    # -- __RESOURCE__ spec --------------------------------------------------
+    # TEMPLATE: Define all fields of your resource here.
+    __RESOURCE__:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Human-readable name
+          example: "my-__RESOURCE_LOWER__"
+        description:
+          type: string
+          description: Optional description
+          example: "A sample __RESOURCE_LOWER__ resource"
+        # TEMPLATE: Add resource-specific fields.
+        # type:
+        #   type: string
+        #   enum: [TypeA, TypeB]
+        # status:
+        #   type: string
+        #   enum: [active, inactive]
+
+    # -- Request bodies ----------------------------------------------------
+    Create__RESOURCE__Request:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: "my-__RESOURCE_LOWER__"
+        description:
+          type: string
+          example: "A new __RESOURCE_LOWER__"
+
+    Update__RESOURCE__Request:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    Patch__RESOURCE__Request:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    # -- RFC 9457 Problem Details -------------------------------------------
+    ProblemDetail:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "about:blank"
+        title:
+          type: string
+          example: "Not Found"
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: '__RESOURCE_LOWER__ "abc123" not found'
+        instance:
+          type: string
+          example: "__API_PREFIX__/__RESOURCE_PLURAL__/abc123"
+        errors:
+          type: array
+          description: Field-level validation errors (present on 400 responses)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: "name"
+              message:
+                type: string
+                example: "name is required and must not be blank"
+
+  # -------------------------------------------------------------------------
+  # Reusable Responses
+  # -------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Invalid request (validation error)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    Conflict:
+      description: Resource conflict (duplicate)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    PreconditionFailed:
+      description: ETag mismatch — resource has been modified
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    PreconditionRequired:
+      description: If-Match header is required
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+    ServiceUnavailable:
+      description: Service is not ready (e.g., database unreachable)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+
+# ---------------------------------------------------------------------------
+# Global security — all endpoints require Bearer auth unless overridden.
+# ---------------------------------------------------------------------------
+security:
+  - BearerAuth: []

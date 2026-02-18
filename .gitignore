@@ -1,0 +1,54 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.work
+go.work.sum
+
+# Build output
+bin/
+dist/
+
+# Node.js / Frontend
+node_modules/
+.npm
+.pnpm-store/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Environment / secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Docker
+.docker/
+
+# Tools
+.zk/
+
+# Misc
+*.log
