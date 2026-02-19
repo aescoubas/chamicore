@@ -33,56 +33,30 @@ into a submodule-based monorepo, simplifying development, deployment, and mainte
 
 ### Non-Goals
 
-- 1:1 fork or port of OpenCHAMI (this is a clean-room rewrite using OpenCHAMI as design reference)
+- 1:1 fork or port of OpenCHAMI (this is a clean-room rewrite)
 - Support for legacy Cray-HPE dependencies or libraries
-- Kafka/message bus (NATS JetStream is the chosen event infrastructure for Phase 2; see
-  [ADR-015](ARCHITECTURE/ADR-015-event-driven-architecture.md)). Start synchronous HTTP
-  with polling+ETags ([ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md)), then add
-  NATS-based event-driven patterns when justified by scale or decoupling requirements.
-- Vault integration (use environment variables and Kubernetes secrets)
+- Kafka/message bus (NATS JetStream for Phase 2; see [ADR-015](ARCHITECTURE/ADR-015-event-driven-architecture.md))
+- Vault integration (use env vars + k8s secrets)
 - Multi-database engine support (PostgreSQL only)
-- Hub/spoke API gateway (per-service URL path versioning is sufficient at our scale)
+- Hub/spoke API gateway (per-service URL path versioning is sufficient)
 
 ---
 
 ## Repository Structure
 
 ```
-chamicore/                          # This repo - the monorepo umbrella
-  AGENTS.md                         # This file
-  GEMINI.md -> AGENTS.md            # Symlink for Gemini
-  CLAUDE.md -> AGENTS.md            # Symlink for Claude
-  README.md                         # Project overview and quick start
-  LICENSE                           # MIT License
+chamicore/                          # Monorepo umbrella
+  AGENTS.md / GEMINI.md / CLAUDE.md # AI agent instructions (symlinks)
+  IMPLEMENTATION.md                 # Phased task breakdown
   Makefile                          # Cross-service task runner
-  .gitmodules                       # Submodule definitions (added when repos exist)
-  .gitignore
-  .editorconfig
-  ARCHITECTURE/
-    README.md                       # ADR index
-    TEMPLATE.md                     # ADR template
-    ADR-001-clean-room-rewrite.md
-    ADR-002-microservice-selection.md
-    ADR-003-shared-postgresql.md
-    ADR-004-go-chi-framework.md
-    ADR-005-submodule-monorepo.md
-    ADR-006-authentication-oidc-jwt.md
-    ADR-007-api-design-conventions.md
-    ADR-008-deployment-strategy.md
-  tests/                            # Cross-service tests
-    smoke/                          # Smoke tests (quick health verification)
-    load/                           # Load/performance tests (k6 scripts, baselines)
+  ARCHITECTURE/                     # ADR index + 15 ADRs
+  templates/service/                # Golden code templates
+  tests/                            # Cross-service tests (smoke/, load/)
   services/
-    chamicore-smd/                  # Submodule: State Management Daemon
-    chamicore-bss/                  # Submodule: Boot Script Service
-    chamicore-cloud-init/           # Submodule: Cloud-Init payloads
-    chamicore-auth/                 # Submodule: Authentication and authorization
-    chamicore-discovery/            # Submodule: Hardware discovery (BMC scanning, registration)
-    chamicore-ui/                   # Submodule: Web UI (Go backend + Vue.js frontend)
-    chamicore-cli/                  # Submodule: Command-line interface
+    chamicore-{smd,bss,cloud-init,auth,discovery,ui,cli}/  # Service submodules
   shared/
-    chamicore-lib/                  # Submodule: Shared Go library
-    chamicore-deploy/               # Submodule: Helm + Compose deployment
+    chamicore-lib/                  # Shared Go library
+    chamicore-deploy/               # Helm + Compose deployment
 ```
 
 ---
@@ -96,13 +70,18 @@ chamicore/                          # This repo - the monorepo umbrella
 | chamicore-smd | 27779 | `/hsm/v2/` | Central inventory and hardware state | PostgreSQL, chamicore-auth (JWKS) |
 | chamicore-bss | 27778 | `/boot/v1/` | iPXE boot scripts, kernel/initrd management | PostgreSQL, SMD |
 | chamicore-cloud-init | 27777 | `/cloud-init/` | Per-node cloud-init payloads | PostgreSQL, SMD |
-| chamicore-kea-sync | N/A | N/A | Syncs SMD inventory to Kea DHCP for PXE/iPXE boot | SMD API, Kea API |
-| chamicore-discovery | 27776 | `/discovery/v1/` | Hardware discovery (Redfish, IPMI, SNMP, CSV); dual-mode: service + sysadmin CLI | PostgreSQL, SMD API, chamicore-auth (JWKS + creds) |
-| chamicore-auth | 3333 | `/auth/v1/` | AuthN/AuthZ (OIDC, Casbin) + device credential store | PostgreSQL |
-| chamicore-ui | 8080 | `/` | Web management UI (Go backend, Vue.js frontend) | All service APIs, chamicore-auth |
-| chamicore-cli | N/A | N/A | CLI client: per-service commands + composite workflows | All service APIs |
+| chamicore-kea-sync | N/A | N/A | Syncs SMD inventory to Kea DHCP | SMD API, Kea API |
+| chamicore-discovery | 27776 | `/discovery/v1/` | Hardware discovery (dual-mode: service + CLI) | PostgreSQL, SMD API, chamicore-auth |
+| chamicore-auth | 3333 | `/auth/v1/` | AuthN/AuthZ (OIDC, Casbin) + device creds | PostgreSQL |
+| chamicore-ui | 8080 | `/` | Web management UI (Go + Vue.js BFF) | All service APIs |
+| chamicore-cli | N/A | N/A | CLI client: per-service + composite workflows | All service APIs |
 | chamicore-deploy | N/A | N/A | Helm charts + Docker Compose | N/A |
 | chamicore-lib | N/A | N/A | Shared Go library | N/A |
+
+> For detailed service descriptions, see:
+> [ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md) (auth),
+> [ADR-013](ARCHITECTURE/ADR-013-dedicated-discovery-service.md) (discovery),
+> [ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md) (BSS/Cloud-Init/Kea-Sync boot path).
 
 ### Inter-Service Dependency Order
 
@@ -117,125 +96,16 @@ PostgreSQL
     -> Discovery (needs chamicore-auth for JWKS + creds, needs SMD API; NOT in boot path)
 ```
 
-### Service Descriptions
+### Key Architecture Rules
 
-**chamicore-smd** (State Management Daemon)
-The central inventory service. Manages hardware components, their states, roles, NIDs,
-group memberships, and network interfaces. SMD is a pure inventory and state CRUD service;
-it does not perform hardware discovery (see chamicore-discovery below).
-This is the most complex service and the foundation that others depend on.
-Upstream reference: `OpenCHAMI/smd`.
-
-**chamicore-bss** (Boot Script Service)
-Generates iPXE boot scripts for nodes based on their boot parameters. Stores kernel URI,
-initrd URI, and kernel command-line parameters per node or per role. BSS is
-**self-sufficient at boot time**: it stores MAC addresses and roles denormalized from SMD
-in its own `bss` schema and serves boot scripts with a single local database query. No
-cross-service HTTP calls on the boot-script-serve path. A background sync loop polls SMD
-for changes (MAC updates, role changes) using ETags for efficiency.
-Boot endpoints are unauthenticated (nodes do not carry JWTs).
-See [ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md).
-Upstream reference: `OpenCHAMI/bss`.
-
-**chamicore-cloud-init** (Cloud-Init)
-Serves cloud-init payloads (user-data, meta-data, vendor-data) per node.
-Nodes fetch their configuration during boot via the cloud-init NoCloud datasource.
-Cloud-Init is **self-sufficient at boot time**: it stores payloads and component metadata
-in its own `cloudinit` schema and serves payloads with a single local database query. No
-cross-service HTTP calls on the payload-serve path. A background sync loop polls SMD for
-component metadata changes.
-Boot endpoints are unauthenticated.
-See [ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md).
-Upstream reference: `OpenCHAMI/cloud-init`.
-
-**chamicore-kea-sync** (Kea DHCP Sync Service)
-A sync daemon that watches SMD for component changes (new nodes, MAC address updates,
-IP assignments) and pushes DHCP reservations to the [Kea](https://www.isc.org/kea/)
-DHCP server via its control agent REST API. Kea handles the actual PXE/iPXE boot
-DHCP responses. This replaces the upstream CoreDHCP plugin approach with a standard,
-production-grade DHCP server.
-Upstream reference: replaces `OpenCHAMI/coresmd`.
-
-**chamicore-discovery** (Hardware Discovery)
-A dual-mode binary that operates as both a long-running HTTP service and a standalone
-sysadmin CLI tool. Built with Cobra.
-
-- **Server mode** (`chamicore-discovery serve`): Runs the HTTP API with database-backed
-  target management, scheduled scans (cron), job tracking, and metrics. Used in production
-  deployments.
-- **Standalone CLI mode** (`scan`, `probe`, `import`, `drivers`): Works without the
-  discovery service or database running. Sysadmins can do ad-hoc scans, probe individual
-  BMCs, and bulk-import CSV/JSON from any management node. Results are pushed directly to
-  SMD's HTTP API. Supports `--dry-run`, `--output json/yaml/table`, and inline credentials.
-- **Service client mode** (`targets`, `scans`): Manages persistent targets and views scan
-  history by talking to the running discovery service API.
-
-Supports pluggable discovery drivers (Redfish, IPMI, SNMP, LLDP, CSV/JSON import, manual
-API). Discovery is **not in the critical boot path**: if the discovery service is down,
-existing inventory and the entire boot pipeline continue to function.
-
-Device credentials (BMC usernames/passwords) are managed by chamicore-auth and fetched
-on-demand during scans, or passed inline via CLI flags for standalone use.
-See [ADR-013](ARCHITECTURE/ADR-013-dedicated-discovery-service.md).
-Upstream reference: replaces `OpenCHAMI/magellan`.
-
-**chamicore-auth** (Authentication and Authorization)
-Consolidated auth service replacing upstream OPAAL + Ory Hydra + Tokensmith.
-Federates with external IdPs via OIDC, exchanges identity tokens for short-lived
-scoped Chamicore JWTs, enforces RBAC/ABAC policies via Casbin, serves JWKS endpoint,
-manages service accounts, provides audit logging, and stores device credentials
-(BMC/IPMI/SNMP) used by chamicore-discovery.
-See [ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md).
-Upstream references: `OpenCHAMI/opaal`, `OpenCHAMI/tokensmith`.
-
-**chamicore-ui** (Web Management UI)
-A web-based management interface with a Go backend and Vue.js frontend, both in a
-single repository. The Go backend serves the Vue.js SPA as embedded static assets
-and provides a backend-for-frontend (BFF) API that aggregates calls to the
-Chamicore microservices. The frontend communicates only with its own backend;
-it never calls microservices directly.
-
-- **Backend**: Go HTTP server using go-chi. Handles OIDC login flows with
-  chamicore-auth, maintains user sessions, and proxies/aggregates API calls
-  to SMD, BSS, Cloud-Init, and Auth on behalf of the frontend.
-- **Frontend**: Vue.js 3 single-page application with Vue Router and Pinia
-  for state management. Built with Vite, production assets embedded into
-  the Go binary via `embed.FS`.
-- **Key views**: Dashboard (system overview), Inventory (component browser/editor),
-  Boot Configuration (BSS params, iPXE scripts), Cloud-Init (payload editor),
-  DHCP (Kea sync status), Discovery (scan targets, scan jobs, discovered hardware),
-  Users & Roles (Casbin policy management), Audit Log.
-
-Upstream reference: no direct upstream equivalent.
-
-**chamicore-cli** (Command-Line Interface)
-A Go CLI client built with Cobra that operates in two modes:
-- **Direct mode**: Target individual microservices with per-service subcommands
-  (e.g., `chamicore smd components list`, `chamicore bss bootparams set`,
-  `chamicore discovery scans list`, `chamicore discovery targets create`).
-- **Composite mode**: Run higher-level workflows that orchestrate multiple services
-  (e.g., `chamicore node provision` which coordinates SMD, BSS, and Cloud-Init;
-  `chamicore node discover` which triggers discovery and tracks registration).
-
-The CLI imports typed HTTP clients from each service's `pkg/client/` package
-and uses `chamicore-lib/auth` for token management. Configuration (endpoints,
-credentials, output format) is loaded from a config file (`~/.chamicore/config.yaml`)
-and/or environment variables.
-
-Note: `chamicore-discovery` also has its own built-in CLI for standalone ad-hoc
-operations (scan, probe, import). The `chamicore` CLI delegates to the discovery
-service API for managed targets/scans, while `chamicore-discovery` can be used
-directly on a management node without the service running.
-Upstream reference: `OpenCHAMI/ochami`.
-
-**chamicore-deploy** (Deployment)
-Helm charts for Kubernetes production deployment and Docker Compose files for
-local development. Includes CI/CD pipeline definitions.
-Upstream reference: `OpenCHAMI/deployment-recipes`.
-
-**chamicore-lib** (Shared Library)
-Common Go packages shared across all services. Avoids duplicating auth middleware,
-database helpers, HTTP utilities, and domain types.
+- **Boot-path self-sufficiency** ([ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md)):
+  BSS and Cloud-Init store data locally and serve boot requests with zero cross-service
+  HTTP calls. Background sync loops poll SMD using ETags.
+- **Boot endpoints are unauthenticated**: Nodes do not carry JWTs.
+- **Discovery is decoupled** ([ADR-013](ARCHITECTURE/ADR-013-dedicated-discovery-service.md)):
+  Dual-mode binary (server + standalone CLI). Not in the critical boot path.
+- **Sync-dependent services** (BSS, Cloud-Init, Kea-Sync) must wait for initial sync
+  before reporting ready (readiness handler checks `atomic.Bool` flag).
 
 ---
 
@@ -245,124 +115,22 @@ Every service repository follows this layout:
 
 ```
 chamicore-<service>/
-  cmd/<service>/main.go             # Entry point
+  cmd/<service>/main.go             # Entry point (minimal: wire deps, call server.Run())
   internal/
-    server/                         # HTTP server, chi router, handler functions
-    store/                          # Repository interface + PostgreSQL implementation
-    model/                          # Domain types (internal to service)
-    config/                         # Configuration loading (env vars, flags)
+    server/                         # HTTP handlers, middleware wiring, route registration
+    store/                          # Store interface + PostgresStore implementation
+    model/                          # Internal domain types (separate from pkg/types/)
+    config/                         # Config struct with env var loading
   pkg/
-    client/                         # HTTP client SDK for this service
-    types/                          # Public types shared with consumers
-  api/openapi.yaml                  # OpenAPI 3.0 specification
-  migrations/postgres/              # SQL migration files (golang-migrate format)
-  Dockerfile
-  Makefile
-  go.mod
-  go.sum
-  .goreleaser.yml
-  .gitlab-ci.yml
-  .golangci.yml
-  README.md
-  LICENSE
+    client/                         # Typed HTTP client SDK for this service
+    types/                          # Public request/response types (matches OpenAPI spec)
+  api/openapi.yaml                  # OpenAPI 3.0 spec (source of truth)
+  migrations/postgres/              # SQL migrations: 000001_init.up.sql / .down.sql
+  Dockerfile, Makefile, go.mod, .goreleaser.yml, .gitlab-ci.yml, .golangci.yml
 ```
 
-### Directory Conventions
-
-- `cmd/` - Only `main.go`, kept minimal. Wire dependencies here, then call `server.Run()`.
-- `internal/` - Service-private code. Not importable by other modules.
-  - `server/` - HTTP handlers, middleware wiring, route registration.
-  - `store/` - Data access layer. Define a `Store` interface, implement `PostgresStore`.
-  - `model/` - Internal domain types. Keep separate from `pkg/types/` (public API types).
-  - `config/` - Load config from env vars with sensible defaults. Use a `Config` struct.
-- `pkg/` - Code importable by other services or external consumers.
-  - `client/` - Typed HTTP client for this service's API.
-  - `types/` - Request/response types matching the OpenAPI spec.
-- `migrations/` - Numbered SQL files: `000001_init.up.sql`, `000001_init.down.sql`.
-- `api/` - OpenAPI spec is the source of truth for the API contract.
-
-### CLI Repository Layout
-
-The CLI follows a different structure from the microservices:
-
-```
-chamicore-cli/
-  cmd/chamicore/main.go             # Entry point
-  internal/
-    config/                         # CLI config loading (~/.chamicore/config.yaml, env vars)
-    output/                         # Output formatting (table, JSON, YAML)
-    smd/                            # Subcommands for SMD (components, groups, etc.)
-    bss/                            # Subcommands for BSS (bootparams, bootscript, etc.)
-    cloudinit/                      # Subcommands for Cloud-Init (userdata, metadata, etc.)
-    auth/                           # Subcommands for auth (login, token, roles, policies, creds, etc.)
-    discovery/                      # Subcommands for discovery (targets, scans, drivers)
-    composite/                      # Composite workflows spanning multiple services
-  Makefile
-  go.mod
-  go.sum
-  .goreleaser.yml
-  .gitlab-ci.yml
-  .golangci.yml
-  README.md
-  LICENSE
-```
-
-**Key design points:**
-- Each service gets its own subcommand group (e.g., `chamicore smd`, `chamicore bss`).
-- Composite commands live in `internal/composite/` and orchestrate calls across services
-  (e.g., `chamicore node provision` calls SMD + BSS + Cloud-Init in sequence).
-- The CLI imports each service's `pkg/client/` package for typed API access.
-- Output formatting is pluggable: `--output table` (default), `--output json`, `--output yaml`.
-- Auth tokens are managed via `chamicore-lib/auth` (login, token refresh, token caching).
-- Config file at `~/.chamicore/config.yaml` stores endpoint URLs, default output format, and
-  active auth context.
-
-### Web UI Repository Layout
-
-The web UI combines Go backend and Vue.js frontend in one repository:
-
-```
-chamicore-ui/
-  cmd/chamicore-ui/main.go          # Entry point (embeds frontend, starts server)
-  internal/
-    server/                         # Go HTTP server, chi router, BFF handlers
-    config/                         # Configuration loading
-    session/                        # User session management (cookie-based)
-    proxy/                          # Service proxy/aggregation layer
-  frontend/                         # Vue.js application
-    src/
-      main.ts                       # Vue app entry point
-      router/                       # Vue Router configuration
-      stores/                       # Pinia state stores
-      views/                        # Page-level components
-      components/                   # Reusable UI components
-      api/                          # TypeScript API client (talks to BFF backend only)
-    public/                         # Static assets
-    index.html
-    package.json
-    vite.config.ts
-    tsconfig.json
-  Dockerfile                        # Multi-stage: node build -> go build -> distroless
-  Makefile
-  go.mod
-  go.sum
-  .gitlab-ci.yml
-  .golangci.yml
-  README.md
-  LICENSE
-```
-
-**Key design points:**
-- The Go backend embeds the compiled Vue.js SPA via `//go:embed frontend/dist/*` so the
-  entire UI ships as a single binary with no external file dependencies.
-- The backend acts as a **BFF (Backend for Frontend)**: it aggregates and transforms
-  microservice responses into shapes optimized for the frontend views.
-- The backend handles OIDC authentication with chamicore-auth, stores session state in
-  secure HTTP-only cookies, and proxies authenticated requests to microservices.
-- The frontend never holds raw JWTs or calls microservices directly.
-- The Dockerfile uses a multi-stage build: first stage runs `npm run build` (Vite),
-  second stage compiles the Go binary with embedded assets, final stage is distroless.
-- `make dev` runs the Go backend and Vite dev server concurrently with hot-reload.
+> CLI (`chamicore-cli`) and UI (`chamicore-ui`) follow different layouts. See their
+> respective repositories when working on Phase 4-5.
 
 ---
 
@@ -373,73 +141,15 @@ chamicore-ui/
 | `auth/` | JWT middleware, scope enforcement, claims extraction, JWKS fetching, dev mode bypass |
 | `httputil/` | Resource envelope types, RFC 9457 error helpers, JSON response helpers, request logging, request ID, content negotiation, cache control, API versioning, secure headers, health/version/Swagger handlers |
 | `httputil/client/` | Base HTTP client with retries, backoff, error parsing, token injection, request ID and trace context propagation |
-| `otel/` | OTel SDK initialization, HTTP metrics/tracing middleware, DB instrumentation, Prometheus endpoint, shutdown helpers |
+| `otel/` | OTel SDK initialization, HTTP metrics/tracing middleware, DB instrumentation, Prometheus endpoint |
 | `dbutil/` | PostgreSQL connection pool setup, migration runner, config struct |
 | `identity/` | Component ID validation, type/state/role enums, xname compatibility helpers |
-| `events/` | Event envelope types (CloudEvents-compatible), publisher/subscriber interfaces, subject hierarchy helpers |
-| `events/nats/` | NATS JetStream publisher/subscriber implementation, stream/consumer setup helpers |
-| `events/outbox/` | Transactional outbox pattern: PostgreSQL outbox table writer, relay daemon, LISTEN/NOTIFY integration |
+| `events/` | Event envelope types (CloudEvents-compatible), publisher/subscriber interfaces |
+| `events/nats/` | NATS JetStream publisher/subscriber implementation (Phase 2) |
+| `events/outbox/` | Transactional outbox pattern: PostgreSQL outbox writer, relay daemon |
 | `testutil/` | Test PostgreSQL containers (testcontainers-go), HTTP test helpers |
 
-### chamicore-lib Directory Layout
-
-```
-chamicore-lib/
-  auth/
-    middleware.go           # JWTMiddleware, RequireScope, InternalTokenMiddleware
-    claims.go               # Claims struct, context helpers (ClaimsFromContext)
-    jwks.go                 # JWKS fetcher with background refresh
-    devmode.go              # Dev-mode bypass (synthetic admin claims)
-    auth_test.go
-  httputil/
-    envelope.go             # Resource[T], ResourceList[T], Metadata, ListMetadata
-    problem.go              # RFC 9457 Problem(), ValidationError()
-    json.go                 # JSON(), Decode(), DecodeStrict() helpers
-    request_id.go           # RequestID middleware
-    logger.go               # RequestLogger middleware (zerolog + chi)
-    secure_headers.go       # SecureHeaders middleware
-    content_type.go         # ContentType middleware
-    api_version.go          # APIVersion middleware
-    cache_control.go        # CacheControl middleware
-    etag.go                 # ETag middleware (If-None-Match / If-Match)
-    body_limit.go           # BodyLimit middleware (1 MB default, 10 MB bulk)
-    health.go               # HealthHandler, ReadinessHandler, VersionHandler
-    swagger.go              # SwaggerUIHandler, OpenAPIHandler
-    client/
-      client.go             # Base HTTP client (retries, backoff, token injection)
-      error.go              # APIError type (RFC 9457 parsing)
-  otel/
-    init.go                 # OTel SDK initialization + shutdown
-    http_metrics.go         # HTTPMetrics middleware
-    http_tracing.go         # HTTPTracing middleware
-    db.go                   # InstrumentDB wrapper for *sql.DB
-    prometheus.go           # Prometheus scrape endpoint setup
-  dbutil/
-    config.go               # DB config struct (DSN, pool sizes, timeouts)
-    connect.go              # NewPool() — *sql.DB with connection pool tuning
-    migrate.go              # RunMigrations() — golang-migrate runner
-  identity/
-    id.go                   # ValidateID(), GenerateID(componentType), ParseID()
-    types.go                # ComponentType, State, Role, Flag enums
-    xname.go                # Xname compatibility helpers (IsXname, ParseXname)
-  events/
-    event.go                # Event envelope (CloudEvents-compatible struct)
-    publisher.go            # Publisher interface
-    subscriber.go           # Subscriber interface
-    subjects.go             # Subject hierarchy helpers (e.g., "chamicore.smd.components.created")
-    nats/
-      publisher.go          # NATS JetStream Publisher implementation
-      subscriber.go         # NATS JetStream Subscriber implementation
-      stream.go             # Stream and consumer setup helpers
-    outbox/
-      writer.go             # Transactional outbox table writer
-      relay.go              # Outbox relay daemon (polls or LISTEN/NOTIFY)
-  testutil/
-    postgres.go             # TestPostgres() — testcontainers-go PostgreSQL helper
-    http.go                 # HTTP test helpers (NewTestServer, AssertJSON, etc.)
-  go.mod
-  go.sum
-```
+> For the full directory layout, read the source: `shared/chamicore-lib/`.
 
 ---
 
@@ -460,19 +170,15 @@ chamicore-lib/
 - Return `error` values; do not panic except in truly unrecoverable situations.
 - Wrap errors with context: `fmt.Errorf("loading config: %w", err)`.
 - Use sentinel errors for well-known conditions: `var ErrNotFound = errors.New("not found")`.
-- HTTP handlers should map domain errors to appropriate status codes via a helper.
+- HTTP handlers map domain errors to appropriate status codes via helpers.
 - Log errors at the handler level, not deep in business logic.
 
 ### Logging
 
 - Use `rs/zerolog` exclusively. No `log`, `logrus`, `zap`, or `fmt.Println`.
-- Structured logging with consistent field names:
-  ```go
-  log.Info().Str("component_id", id).Int("nid", nid).Msg("component registered")
-  ```
-- Log levels: `debug` for development detail, `info` for operational events,
-  `warn` for recoverable issues, `error` for failures, `fatal` only in `main()`.
-- Request logging via zerolog chi middleware (from chamicore-lib/httputil).
+- Structured logging: `log.Info().Str("component_id", id).Msg("component registered")`
+- Log levels: `debug` (dev detail), `info` (operational), `warn` (recoverable),
+  `error` (failures), `fatal` (only in `main()`).
 
 ### Testing
 
@@ -481,183 +187,31 @@ chamicore-lib/
 - Use `testing` package + `stretchr/testify` for assertions.
 - Table-driven tests as the default pattern.
 - Test files: `*_test.go` in the same package.
-- Unit tests: Test business logic with mocked store interfaces.
-- **Mock strategy**: Use hand-written struct mocks with function fields. No code generation
-  tools (`mockgen`, `mockery`). Each mock method delegates to a `Fn` field:
+- **Mock strategy**: Hand-written struct mocks with function fields. No `mockgen`/`mockery`.
+  Each mock method delegates to a `Fn` field; nil fields panic (desired — catches unexpected calls):
   ```go
   type mockStore struct {
-      GetComponentFn    func(ctx context.Context, id string) (model.Component, error)
-      ListComponentsFn  func(ctx context.Context, opts ListOptions) ([]model.Component, int, error)
-      // ... one field per Store method
+      GetComponentFn func(ctx context.Context, id string) (model.Component, error)
   }
   func (m *mockStore) GetComponent(ctx context.Context, id string) (model.Component, error) {
       return m.GetComponentFn(ctx, id)
   }
   ```
-  Unused `Fn` fields left nil will panic if called, which is the desired behavior — it
-  means the test hit an unexpected code path.
 - Name test functions: `TestFunctionName_Scenario_ExpectedBehavior`.
-- **100% code coverage is the target.** Every new or modified package must maintain full
-  coverage. Run `go test -coverprofile=coverage.out ./...` and verify with
-  `go tool cover -func=coverage.out`. CI enforces this; builds fail if coverage drops.
-- Cover all code paths: success cases, error cases, edge cases, and boundary conditions.
-- Use `t.Helper()` in test helpers so failures report the caller's line.
-- When a function is genuinely untestable (e.g., `main()` wiring), keep it minimal and
-  document why it is excluded.
+- **100% code coverage is the target.** CI enforces this; builds fail if coverage drops.
+  Run `go test -coverprofile=coverage.out ./...` and verify with `go tool cover -func=coverage.out`.
+- Cover all code paths: success, error, edge cases, boundary conditions.
+- Use `t.Helper()` in test helpers. Use `t.Parallel()` where safe.
 
-#### Integration Tests (per-service)
+#### Integration Tests
 
-- Use `testcontainers-go` to spin up real PostgreSQL instances for store-layer tests.
-- Integration test files use the `//go:build integration` build tag so they can be
-  run separately: `go test -tags integration ./...`.
-- Each service tests its own HTTP API end-to-end: start the server, send real HTTP
-  requests, verify responses and database state.
+- Use `testcontainers-go` for real PostgreSQL instances in store-layer tests.
+- Build tag: `//go:build integration` — run separately: `go test -tags integration ./...`
 - Test the full request lifecycle including middleware (auth, logging, error handling).
-- Migrations must be applied and verified as part of integration test setup.
+- Migrations must be applied as part of integration test setup.
 
-#### System Integration Tests (cross-service)
-
-- Live in the top-level `tests/` directory of this monorepo.
-- Use Docker Compose to bring up the full stack (PostgreSQL, chamicore-auth, SMD, BSS, Cloud-Init).
-- Test real inter-service workflows and regression scenarios:
-  - **Boot path**: Register node in SMD -> set boot params in BSS -> verify iPXE script.
-  - **Auth flow**: Authenticate via chamicore-auth -> use token against SMD -> verify rejection
-    with expired/invalid/insufficient-scope token.
-  - **Cloud-init path**: Register node in SMD -> configure cloud-init payload -> verify
-    served user-data/meta-data.
-  - **Discovery flow**: Configure discovery target -> trigger scan -> chamicore-discovery
-    discovers BMCs via Redfish -> registers components in SMD via HTTP API.
-- Written in Go using the service `pkg/client/` packages as a real consumer would.
-- Run on every merge to the main branch; failures block the merge.
-- New features and bug fixes must include a regression test at the appropriate level
-  (unit, integration, or system) before being merged.
-
-#### Smoke Tests
-
-Smoke tests verify that the deployed stack is functional before running heavier test
-suites. They live in `tests/smoke/` and are designed to run quickly (< 30 seconds).
-
-- Written in Go with the `//go:build smoke` build tag.
-- Run against a live stack (Docker Compose or Kubernetes).
-- Verify each service is reachable and returns healthy responses.
-- Test one happy-path request per service (e.g., create a component, fetch a boot script).
-- Run as the first step after deployment in CI and before load tests.
-- Exit with non-zero status on any failure; load tests are skipped if smoke fails.
-
-```bash
-make test-smoke       # Run smoke tests against a live stack
-```
-
-#### Load and Performance Tests
-
-> See [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md) for the full strategy.
-
-Chamicore must support booting **tens of thousands of nodes concurrently**. Load tests
-validate that the system meets throughput and latency targets under realistic scale.
-They live in `tests/load/`.
-
-**Tooling**: [k6](https://k6.io/) for HTTP load generation. k6 scripts are written in
-JavaScript/TypeScript, support complex scenarios with ramping VUs, and produce structured
-metrics that integrate with Prometheus/Grafana. Supplementary Go-based load generators
-may be used for scenarios requiring typed service clients.
-
-**Test scenarios:**
-
-| Scenario | Description | Target |
-|----------|-------------|--------|
-| **Boot storm** | Simulate N nodes requesting boot scripts from BSS concurrently | 10,000+ req/s at p99 < 100ms |
-| **Cloud-init storm** | Simulate N nodes fetching cloud-init payloads concurrently | 10,000+ req/s at p99 < 100ms |
-| **Inventory at scale** | Pre-populate SMD with 50,000 components, then run CRUD and list queries | List 50k: p99 < 500ms; single GET: p99 < 10ms |
-| **Bulk registration** | Register 10,000 components into SMD as fast as possible | > 1,000 registrations/s |
-| **DHCP sync burst** | Trigger 10,000 component changes, measure time until Kea has all reservations | Full sync < 60s |
-| **Auth under load** | Token exchange requests under concurrent boot-storm conditions | 5,000+ token exchanges/s at p99 < 50ms |
-| **Mixed boot path** | End-to-end: register components -> set boot params -> request boot scripts -> fetch cloud-init | p99 < 200ms per node (full path) |
-| **Bulk discovery** | Discover 10,000 BMCs via Redfish and register into SMD | > 500 discoveries/s, all registered within 60s |
-| **Database stress** | Run concurrent writes + reads across all schemas at expected production ratio | No query timeouts, connection pool < 80% utilization |
-
-**Performance metrics to track:**
-
-These metrics are collected during every load test run and tracked over time to detect
-regressions. They are exported via OTel and visualized in Grafana dashboards.
-
-| Category | Metric | Target | Source |
-|----------|--------|--------|--------|
-| **Latency** | `http_server_request_duration_seconds` p50 | < 10ms (single resource GET) | OTel / Prometheus |
-| **Latency** | `http_server_request_duration_seconds` p95 | < 50ms | OTel / Prometheus |
-| **Latency** | `http_server_request_duration_seconds` p99 | < 100ms | OTel / Prometheus |
-| **Latency** | `boot_path_total_duration_seconds` p99 | < 200ms (register to boot script served) | Custom metric |
-| **Throughput** | `http_server_requests_total` rate | > 10,000 req/s per service | OTel / Prometheus |
-| **Throughput** | `smd_components_registered_total` rate | > 1,000/s (bulk registration) | Custom metric |
-| **Throughput** | `kea_sync_reservations_pushed_total` rate | > 500/s | Custom metric |
-| **Errors** | `http_server_requests_total{status=~"5.."}` rate | < 0.1% of total | OTel / Prometheus |
-| **Errors** | k6 `http_req_failed` rate | < 0.1% | k6 output |
-| **Database** | `db_query_duration_seconds` p99 | < 50ms | OTel / Prometheus |
-| **Database** | `db_pool_connections_active` | < 80% of max pool | OTel / Prometheus |
-| **Database** | `db_pool_wait_duration_seconds` p99 | < 10ms | OTel / Prometheus |
-| **Resources** | Container memory usage | Stable (no leaks over 30min run) | cAdvisor / Prometheus |
-| **Resources** | Container CPU usage | < 80% under sustained load | cAdvisor / Prometheus |
-| **Saturation** | `http_server_active_requests` max | < configured concurrency limit | OTel / Prometheus |
-
-**Boot storm simulation:**
-
-The critical scenario is a power-on event where thousands of nodes simultaneously:
-1. Request DHCP leases (Kea — external, but Kea-Sync must have pre-populated reservations)
-2. Fetch iPXE boot scripts from BSS
-3. Download kernel/initrd (served externally, not Chamicore's concern)
-4. Fetch cloud-init payloads from Cloud-Init
-
-The load test simulates steps 2 and 4 at the target concurrency. A boot storm test
-run proceeds as:
-
-```
-Phase 1: Seed data
-  - Register 50,000 components in SMD (bulk API)
-  - Set boot parameters for all components in BSS
-  - Configure cloud-init payloads for all components
-  - Wait for Kea-Sync to push all DHCP reservations
-
-Phase 2: Ramp-up
-  - Gradually increase concurrent virtual users from 0 to 10,000 over 2 minutes
-  - Each VU simulates one node: GET /boot/v1/bootscript?mac=<mac> then GET /cloud-init/<id>/user-data
-
-Phase 3: Sustained load
-  - Hold 10,000 concurrent VUs for 10 minutes
-  - Collect latency percentiles, throughput, error rates
-
-Phase 4: Spike
-  - Burst to 20,000 concurrent VUs for 2 minutes (simulates cascading reboot)
-  - Verify system recovers without errors
-
-Phase 5: Cooldown
-  - Ramp down to 0 VUs over 1 minute
-  - Verify no lingering errors, connection leaks, or OOM conditions
-```
-
-**Running load tests:**
-
-```bash
-make test-smoke        # Verify stack is healthy first
-make test-load         # Run full load test suite
-make test-load-quick   # Abbreviated run (1,000 VUs, 2 min) for development
-```
-
-**Load test output:**
-
-k6 results are exported to Prometheus via the k6 Prometheus remote-write extension.
-A pre-built Grafana dashboard in `chamicore-deploy` visualizes:
-- Request rate and latency percentiles over time
-- Error rate and error types
-- Per-service breakdown (SMD, BSS, Cloud-Init, Auth, Discovery)
-- Database connection pool and query latency
-- Container resource usage (CPU, memory, network)
-
-**CI integration:**
-
-- Smoke tests run on every merge to main.
-- Load tests run nightly on a dedicated runner with sufficient resources.
-- Results are compared against baseline thresholds; regressions fail the pipeline.
-- Performance baselines are stored in `tests/load/baselines.json` and updated
-  intentionally (not automatically) when optimizations land.
+> For system integration tests, smoke tests, and load/performance tests, see
+> [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md) and `tests/` directory.
 
 ### Configuration
 
@@ -668,617 +222,137 @@ A pre-built Grafana dashboard in `chamicore-deploy` visualizes:
   - `CHAMICORE_<SERVICE>_DB_DSN` (PostgreSQL connection string)
   - `CHAMICORE_<SERVICE>_LOG_LEVEL` (default: `info`)
   - `CHAMICORE_<SERVICE>_JWKS_URL` (chamicore-auth JWKS endpoint)
-  - `CHAMICORE_INTERNAL_TOKEN` (shared secret for service-to-service auth; same value for all services)
+  - `CHAMICORE_INTERNAL_TOKEN` (shared secret for service-to-service auth)
   - `CHAMICORE_<SERVICE>_DEV_MODE` (disable auth for development)
-  - `CHAMICORE_<SERVICE>_METRICS_ENABLED` (default: `true`)
-  - `CHAMICORE_<SERVICE>_TRACES_ENABLED` (default: `true`)
+  - `CHAMICORE_<SERVICE>_METRICS_ENABLED` / `TRACES_ENABLED` (default: `true`)
   - `CHAMICORE_<SERVICE>_PROMETHEUS_LISTEN_ADDR` (default: `:9090`)
-- OTel SDK standard variables (see [OTel spec](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/)):
-  - `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_RESOURCE_ATTRIBUTES`, etc.
+- OTel SDK variables: `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, etc.
 
 ---
 
 ## API Design Guidelines
 
-### REST Handlers
+> Full rationale: [ADR-007](ARCHITECTURE/ADR-007-api-design-conventions.md).
 
-- Use standard HTTP methods: GET (read), POST (create), PUT (full replace), PATCH (partial update), DELETE.
-- Resource-oriented URLs: `/hsm/v2/State/Components/{id}`.
-- Plural resource names where appropriate.
-- Correct status codes for every operation:
+### REST Conventions
 
-| Method | Success | Empty/Not Found | Validation Error | Conflict |
-|--------|---------|-----------------|------------------|----------|
-| GET (one) | `200 OK` | `404 Not Found` | `400 Bad Request` | - |
-| GET (list) | `200 OK` | `200 OK` (empty list) | `400 Bad Request` | - |
-| POST | `201 Created` + `Location` | - | `400 Bad Request` / `422 Unprocessable Entity` | `409 Conflict` |
-| PUT | `200 OK` | `404 Not Found` | `400 Bad Request` / `422 Unprocessable Entity` | - |
-| PATCH | `200 OK` | `404 Not Found` | `400 Bad Request` / `422 Unprocessable Entity` | - |
-| DELETE | `204 No Content` | `404 Not Found` | - | - |
+- Standard HTTP methods: GET (read), POST (create), PUT (full replace), PATCH (partial update), DELETE.
+- Resource-oriented URLs: `/hsm/v2/State/Components/{id}`. Plural resource names.
+- Version in URL path: `/hsm/v2/`, `/boot/v1/`.
+- **PATCH semantics**: JSON Merge Patch (RFC 7396). Pointer fields: `nil` = don't change.
 
-- Use query parameters for filtering and pagination, not request bodies on GET.
-- **PATCH semantics**: Chamicore uses **JSON Merge Patch** (RFC 7396). Request types use
-  pointer fields: `nil` = "don't change", non-nil = "set to this value" (including zero values).
-  Do NOT implement JSON Patch (RFC 6902) — it adds complexity without benefit at our scale.
+| Method | Success | Not Found | Validation Error | Conflict |
+|--------|---------|-----------|------------------|----------|
+| GET (one) | `200` | `404` | `400` | - |
+| GET (list) | `200` | `200` (empty) | `400` | - |
+| POST | `201` + `Location` | - | `400`/`422` | `409` |
+| PUT | `200` | `404` | `400`/`422` | - |
+| PATCH | `200` | `404` | `400`/`422` | - |
+| DELETE | `204` | `404` | - | - |
 
-### Filtering and Sorting
+### Filtering, Sorting, Pagination
 
-Query parameters for filtering use field names directly:
-
-```
-GET /hsm/v2/State/Components?type=Node&state=Ready&role=Compute
-GET /hsm/v2/State/Components?rack=R12&unit=17
-```
-
-- Multiple values for OR within a field use comma separation: `?type=Node,Switch`.
-- Sorting: `?sort=created_at` (ascending) or `?sort=-created_at` (descending).
-- Default sort: `created_at DESC` (newest first).
-- Phase 1 services implement equality filters only. Range filters (`gt`, `lt`) are deferred.
-- Unknown filter parameters are ignored (not rejected) for forward compatibility.
+- Filter via query params: `?type=Node&state=Ready`. Comma for OR: `?type=Node,Switch`.
+- Sort: `?sort=created_at` (asc) or `?sort=-created_at` (desc). Default: `created_at DESC`.
+- Unknown filter params are ignored (forward compatibility).
+- Pagination: `?limit=100&offset=0`. Default limit: 100. Max limit: 10000.
 
 ### Bulk Operations
 
-For high-throughput batch operations (e.g., registering 10,000+ components during discovery):
-
-```
-POST /hsm/v2/State/Components/bulk
-Content-Type: application/json
-```
-
-Request body: array of create requests. Response: per-item results with status.
-
-```json
-{
-  "kind": "BulkResult",
-  "apiVersion": "hsm/v2",
-  "metadata": { "total": 3, "succeeded": 2, "failed": 1 },
-  "items": [
-    { "id": "node-a1", "status": 201, "message": "created" },
-    { "id": "node-a2", "status": 201, "message": "created" },
-    { "id": "node-a3", "status": 409, "message": "conflict: component already exists" }
-  ]
-}
-```
-
-Conventions:
-- Bulk endpoints accept up to **10,000 items** per request (enforced via body size limit of 10 MB).
-- Processing is **not transactional** — individual items succeed or fail independently.
-- The response always returns `207 Multi-Status` with per-item results.
-- Each item reports its own HTTP status code and any error message.
-- Bulk endpoints use `<resource>/bulk` as the path suffix.
-- Only implement bulk endpoints where they are explicitly required by the service spec.
-
-### Content Negotiation
-
-- Default content type: `application/json`.
-- Handlers inspect `Accept` header and respond accordingly.
-- If a client sends `Accept: application/yaml`, services may support YAML output where useful.
-- Request bodies must set `Content-Type: application/json`; reject with `415 Unsupported Media Type` otherwise.
-- All responses include `Content-Type` header matching the actual response body format.
-
-### Request/Response Validation
-
-- **All incoming requests are validated** before reaching business logic.
-- Validate at two levels:
-  1. **Structural**: JSON well-formedness, required fields present, correct types.
-     Reject with `400 Bad Request`.
-  2. **Semantic**: Business rule validation (e.g., valid component ID format, NID in range, known enum value).
-     Reject with `422 Unprocessable Entity`.
-- Validation errors return an array of field-level details:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Validation Error",
-  "status": 422,
-  "detail": "Request body contains invalid fields",
-  "instance": "/hsm/v2/State/Components",
-  "errors": [
-    {"field": "ID", "message": "invalid component ID: must match ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}[a-zA-Z0-9]$"},
-    {"field": "NID", "message": "must be a positive integer"},
-    {"field": "Role", "message": "unknown role 'SuperCompute'; valid values: Compute, Service, Management"}
-  ]
-}
-```
-
-- Unknown/extra JSON fields are rejected (use `DisallowUnknownFields` on the decoder).
-- Validate path parameters and query parameters, not just request bodies.
+- Path: `<resource>/bulk`. Max 10,000 items (10 MB body limit).
+- Not transactional — items succeed/fail independently. Returns `207 Multi-Status`.
 
 ### Structured Error Responses (RFC 9457)
 
-All error responses follow [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) (Problem Details for HTTP APIs):
-
+All error responses follow [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457):
 ```json
-{
-  "type": "about:blank",
-  "title": "Not Found",
-  "status": 404,
-  "detail": "Component node-a1b2c3 not found",
-  "instance": "/hsm/v2/State/Components/node-a1b2c3"
-}
+{"type":"about:blank","title":"Not Found","status":404,"detail":"Component X not found","instance":"/hsm/v2/State/Components/X"}
 ```
-
-- `type`: A URI identifying the error type (`about:blank` for standard HTTP errors).
-- `title`: Human-readable summary matching the HTTP status text.
-- `status`: The HTTP status code (duplicated for convenience when body is logged).
-- `detail`: Human-readable explanation specific to this occurrence.
-- `instance`: The URI of the request that caused the error.
-- `errors`: (optional) Array of field-level validation errors (see above).
-
-Error response helpers live in `chamicore-lib/httputil`:
-```go
-httputil.Problem(w, r, http.StatusNotFound, "Component %s not found", id)
-httputil.ValidationError(w, r, fieldErrors)
-```
+- Validation errors (422) include `"errors": [{"field":"ID","message":"..."}]` array.
+- Unknown/extra JSON fields are rejected (`DisallowUnknownFields`).
+- Helpers: `httputil.Problem(w, r, status, detail)`, `httputil.ValidationError(w, r, fieldErrors)`
 
 ### Resource Envelope Pattern
 
-All API responses use a **Kubernetes-inspired envelope** that provides consistent structure
-across all resources. Every resource carries metadata alongside its spec:
-
-#### Single Resource
-
-```json
-{
-  "kind": "Component",
-  "apiVersion": "hsm/v2",
-  "metadata": {
-    "id": "node-a1b2c3",
-    "etag": "a1b2c3d4",
-    "createdAt": "2025-03-01T12:00:00Z",
-    "updatedAt": "2025-03-01T14:30:00Z"
-  },
-  "spec": {
-    "type": "Node",
-    "state": "Ready",
-    "role": "Compute",
-    "nid": 1001,
-    "netType": "Sling"
-  }
-}
-```
-
-#### Resource List
-
-```json
-{
-  "kind": "ComponentList",
-  "apiVersion": "hsm/v2",
-  "metadata": {
-    "total": 1500,
-    "limit": 100,
-    "offset": 0
-  },
-  "items": [
-    {
-      "kind": "Component",
-      "apiVersion": "hsm/v2",
-      "metadata": { "id": "node-a1b2c3", "etag": "a1b2c3d4", "createdAt": "...", "updatedAt": "..." },
-      "spec": { "type": "Node", "state": "Ready", "role": "Compute", "nid": 1001 }
-    }
-  ]
-}
-```
-
-#### Envelope Fields
-
-| Field | Description |
-|-------|-------------|
-| `kind` | Resource type name. Lists append `List` suffix. |
-| `apiVersion` | API version string matching the URL prefix (e.g., `hsm/v2`). |
-| `metadata` | Resource metadata: `id`, `etag`, `createdAt`, `updatedAt`. Lists include `total`, `limit`, `offset`. |
-| `spec` | The resource-specific payload. |
-| `items` | Array of resources (list responses only). |
-
-This pattern is implemented as generic Go types in `chamicore-lib/httputil`:
+All responses use a Kubernetes-inspired envelope:
 
 ```go
+// chamicore-lib/httputil
 type Resource[T any] struct {
-    Kind       string   `json:"kind"`
-    APIVersion string   `json:"apiVersion"`
-    Metadata   Metadata `json:"metadata"`
+    Kind       string   `json:"kind"`       // e.g., "Component"
+    APIVersion string   `json:"apiVersion"` // e.g., "hsm/v2"
+    Metadata   Metadata `json:"metadata"`   // id, etag, createdAt, updatedAt
     Spec       T        `json:"spec"`
 }
-
 type ResourceList[T any] struct {
-    Kind       string       `json:"kind"`
+    Kind       string       `json:"kind"`       // e.g., "ComponentList"
     APIVersion string       `json:"apiVersion"`
-    Metadata   ListMetadata `json:"metadata"`
+    Metadata   ListMetadata `json:"metadata"`   // total, limit, offset
     Items      []Resource[T] `json:"items"`
 }
 ```
 
-### OpenAPI Specifications and Swagger UI
+### ETags (Conditional Requests)
 
-- Every service has an `api/openapi.yaml` file defining its complete API contract.
-- The OpenAPI spec is the **source of truth**; handlers must match it exactly.
-- Each service embeds and serves its spec and an interactive **Swagger UI**:
-  - `GET /api/openapi.yaml` - Raw OpenAPI 3.0 spec.
-  - `GET /api/docs` - Swagger UI for interactive exploration and testing.
-- Use Swagger UI served from embedded static assets (no external CDN dependency).
-- Specs include request/response schemas, example values, and error responses.
-- CI validates that the OpenAPI spec matches the actual handler behavior.
+- **Read path**: `ETag` header on GET → client sends `If-None-Match` → `304 Not Modified`.
+- **Write path**: `If-Match` on PUT/PATCH → `412 Precondition Failed` if stale.
+- ETags derived from `updatedAt` or content hash. Required on single-resource GETs and PUT/PATCH.
 
-### Versioning
+### Health Endpoints (no auth required)
 
-- Version in URL path: `/hsm/v2/`, `/boot/v1/`.
-- The `apiVersion` field in the resource envelope echoes the version.
-- Breaking changes require a new version. Non-breaking additions are fine in-place.
-- Maintain compatibility with OpenCHAMI API contracts where specified.
-- A versioning middleware sets `API-Version` response header on all responses.
-- We use simple per-service path versioning rather than a centralized API gateway
-  (hub/spoke pattern). Each service owns its version independently. A gateway can be
-  added in front later if needed without changing service code.
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Liveness probe (`{"status":"ok"}`) |
+| `GET /readiness` | Readiness probe (503 if not ready) |
+| `GET /version` | Build version, commit, build time |
+| `GET /metrics` | Prometheus scrape endpoint |
+| `GET /api/docs` | Swagger UI |
+| `GET /api/openapi.yaml` | OpenAPI spec |
 
-### Health Endpoints
-
-Every service exposes (outside the versioned API prefix, no auth required):
-- `GET /health` - Returns `200 OK` with `{"status": "ok"}`. For liveness probes.
-- `GET /readiness` - Returns `200 OK` when ready to serve. Returns `503 Service Unavailable` when not ready.
-- `GET /version` - Returns build version, commit SHA, build time.
-- `GET /metrics` - Prometheus-format metrics scrape endpoint.
-- `GET /api/docs` - Swagger UI.
-- `GET /api/openapi.yaml` - OpenAPI spec.
-
-#### Readiness Criteria
-
-Readiness checks are service-specific. A service reports ready only when **all** of its
-prerequisites are satisfied:
-
-| Prerequisite | Applies to | Check |
-|-------------|-----------|-------|
-| Database connected and migrated | All services with a DB | Ping + migration version check |
-| JWKS fetched from chamicore-auth | All services with auth | At least one key in the local JWKS cache |
-| Initial sync complete | BSS, Cloud-Init | First successful poll of upstream data (SMD components, boot params) |
-| Kea control agent reachable | Kea-Sync | Successful Kea API health check |
-
-Services with **sync loops** (BSS, Cloud-Init, Kea-Sync) must not report ready until the
-first sync cycle completes. This ensures that Kubernetes readiness gates prevent traffic
-from reaching a service that has not yet loaded its upstream data. The readiness handler
-checks an `atomic.Bool` flag that the sync loop sets after its first successful run:
-
-```go
-// In the sync loop goroutine:
-if err := s.syncFromUpstream(ctx); err == nil {
-    s.initialSyncDone.Store(true)
-}
-
-// In the readiness handler:
-if !s.initialSyncDone.Load() {
-    httputil.Problem(w, r, http.StatusServiceUnavailable, "initial sync not complete")
-    return
-}
-```
-
-### Conditional Requests (ETags)
-
-Services support [ETags](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag) for
-cache validation and optimistic concurrency control on mutable resources.
-
-#### Cache validation (read path)
-
-1. Server includes `ETag` header on GET responses (hash or version of the resource):
-   ```
-   GET /hsm/v2/State/Components/node-a1b2c3
-   200 OK
-   ETag: "a1b2c3d4"
-   ```
-2. Client sends `If-None-Match` on subsequent GETs:
-   ```
-   GET /hsm/v2/State/Components/node-a1b2c3
-   If-None-Match: "a1b2c3d4"
-   ```
-3. If unchanged, server returns `304 Not Modified` with no body (saves bandwidth).
-
-#### Optimistic concurrency (write path)
-
-1. Client fetches a resource and receives its `ETag`.
-2. Client sends `If-Match` on PUT/PATCH:
-   ```
-   PUT /hsm/v2/State/Components/node-a1b2c3
-   If-Match: "a1b2c3d4"
-   Content-Type: application/json
-   ```
-3. If the resource changed since the client last fetched it, the server rejects with
-   `412 Precondition Failed` (prevents lost updates from concurrent edits).
-4. If the ETag matches, the update proceeds normally.
-
-#### Implementation
-
-- ETags are derived from the resource `updatedAt` timestamp or a content hash.
-- The `metadata.etag` field in the resource envelope carries the ETag value.
-- ETag middleware in `chamicore-lib/httputil` handles `If-None-Match` and `If-Match`
-  header processing automatically.
-- ETags are **required** on single-resource GETs and on PUT/PATCH endpoints.
-- ETags are **optional** on list endpoints (only if the full list is cacheable).
-
-The resource envelope includes the ETag:
-
-```json
-{
-  "kind": "Component",
-  "apiVersion": "hsm/v2",
-  "metadata": {
-    "id": "node-a1b2c3",
-    "etag": "a1b2c3d4",
-    "createdAt": "2025-03-01T12:00:00Z",
-    "updatedAt": "2025-03-01T14:30:00Z"
-  },
-  "spec": { ... }
-}
-```
-
-### Pagination
-
-For list endpoints returning potentially large result sets:
-
-```
-GET /hsm/v2/State/Components?limit=100&offset=0
-```
-
-Pagination metadata is in the envelope `metadata` field (see Resource Envelope Pattern above).
-Default limit: 100. Maximum limit: 10000.
+Readiness prerequisites: DB connected+migrated, JWKS fetched, initial sync complete
+(BSS/Cloud-Init/Kea-Sync).
 
 ### Request Body Limits
 
-All request bodies are limited via `http.MaxBytesReader` to prevent memory exhaustion:
+| Type | Limit |
+|------|-------|
+| Standard CRUD | 1 MB |
+| Bulk endpoints | 10 MB |
 
-| Endpoint Type | Max Body Size |
-|--------------|---------------|
-| Standard CRUD (POST, PUT, PATCH) | 1 MB |
-| Bulk import endpoints (`/bulk`) | 10 MB |
-| Cloud-Init payload upload | 1 MB |
-
-When the limit is exceeded, the server returns `413 Request Entity Too Large` with an
-RFC 9457 ProblemDetail body. The `BodyLimit` middleware from `chamicore-lib/httputil`
-handles this automatically. Bulk endpoints override the default with a per-route limit.
-
-### Middleware Stack
-
-Every service applies a standard middleware stack via `chamicore-lib`. The stack is ordered
-and applied in this sequence (outermost first):
+### Middleware Stack (outermost first)
 
 ```go
 r := chi.NewRouter()
-
-// 1. Observability (outermost to capture full request lifecycle)
-r.Use(otelutil.HTTPTracing())      // OTel distributed tracing spans
-r.Use(otelutil.HTTPMetrics())      // OTel request metrics (duration, count, size)
-
-// 2. Request ID and logging
-r.Use(httputil.RequestID)          // Inject X-Request-ID header
-r.Use(httputil.RequestLogger)      // Zerolog structured request logging (includes trace ID)
-
-// 3. Recovery and security
-r.Use(middleware.Recoverer)        // Panic recovery -> 500
-r.Use(httputil.SecureHeaders)      // Security headers (X-Content-Type-Options, etc.)
-
-// 4. Request body limits
-r.Use(httputil.BodyLimit(1 << 20)) // 1 MB default; bulk endpoints override to 10 MB
-
-// 5. Content negotiation
-r.Use(httputil.ContentType)        // Enforce/set Content-Type: application/json
-
-// 6. API versioning
-r.Use(httputil.APIVersion("hsm/v2")) // Set API-Version response header
-
-// 7. Caching and conditional requests
-r.Use(httputil.CacheControl)       // Set Cache-Control headers per method
-                                   // GET: configurable TTL, POST/PUT/PATCH/DELETE: no-store
-r.Use(httputil.ETag)               // Process If-None-Match / If-Match for conditional requests
-
-// 8. Authentication and authorization
-r.Use(auth.JWTMiddleware(cfg))     // Validate JWT, extract claims to context
-r.Use(auth.RequireScope("read:components")) // Per-route scope enforcement
+r.Use(otelutil.HTTPTracing())         // 1. OTel tracing spans
+r.Use(otelutil.HTTPMetrics())         // 2. OTel request metrics
+r.Use(httputil.RequestID)             // 3. X-Request-ID injection
+r.Use(httputil.RequestLogger)         // 4. Zerolog request logging
+r.Use(middleware.Recoverer)           // 5. Panic recovery -> 500
+r.Use(httputil.SecureHeaders)         // 6. X-Content-Type-Options, X-Frame-Options
+r.Use(httputil.BodyLimit(1 << 20))    // 7. 1 MB default body limit
+r.Use(httputil.ContentType)           // 8. Enforce application/json
+r.Use(httputil.APIVersion("hsm/v2")) // 9. API-Version response header
+r.Use(httputil.CacheControl)          // 10. Cache-Control headers
+r.Use(httputil.ETag)                  // 11. If-None-Match / If-Match
+r.Use(auth.JWTMiddleware(cfg))        // 12. JWT validation + claims
+r.Use(auth.RequireScope("..."))       // 13. Per-route scope enforcement
 ```
-
-#### Middleware Details
-
-| Middleware | Package | Purpose |
-|-----------|---------|---------|
-| `HTTPTracing` | `otelutil` | Creates OTel spans, propagates W3C Trace Context, records span attributes |
-| `HTTPMetrics` | `otelutil` | Records request duration, count, active requests, request/response sizes |
-| `RequestID` | `httputil` | Generates or propagates `X-Request-ID` for distributed tracing |
-| `RequestLogger` | `httputil` | Logs method, path, status, duration, request ID, trace ID via zerolog |
-| `Recoverer` | `chi/middleware` | Catches panics, returns `500 Internal Server Error` |
-| `SecureHeaders` | `httputil` | Sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` |
-| `BodyLimit` | `httputil` | Rejects request bodies exceeding 1 MB (10 MB for bulk endpoints) with `413` |
-| `ContentType` | `httputil` | Validates `Content-Type` on requests, sets it on responses |
-| `APIVersion` | `httputil` | Adds `API-Version` header to all responses |
-| `CacheControl` | `httputil` | Sets `Cache-Control` headers. GETs: short TTL or `no-cache`. Mutations: `no-store`. |
-| `ETag` | `httputil` | Processes `If-None-Match` (304) and `If-Match` (412) for conditional requests |
-| `JWTMiddleware` | `auth` | Validates Bearer JWT via JWKS, injects claims into context |
-| `RequireScope` | `auth` | Checks JWT scope claim against required scopes for the route |
 
 ### Type-Safe HTTP Clients
 
-Each service provides a typed Go client in its `pkg/client/` package. These clients are used
-by the CLI, by other services for inter-service calls, and by integration tests.
-
-```go
-// Example: SMD client usage
-client := smdclient.New(smdclient.Config{
-    BaseURL:    "http://localhost:27779",
-    Token:      token,
-    Timeout:    10 * time.Second,
-    MaxRetries: 3,
-})
-
-component, err := client.GetComponent(ctx, "node-a1b2c3")
-components, err := client.ListComponents(ctx, smdclient.ListOpts{Type: "Node", Limit: 100})
-err = client.CreateComponent(ctx, &smdtypes.Component{...})
-```
-
-#### Client Features
-
-- **Type safety**: Methods accept and return typed structs, not raw JSON.
-- **Automatic retries**: Retries on `429 Too Many Requests`, `502`, `503`, `504` with
-  exponential backoff and jitter. Configurable max retries (default: 3).
-- **Error handling**: Non-2xx responses are parsed into structured `*APIError` values
-  (matching the RFC 9457 problem detail format) so callers can inspect status, title, detail.
-- **Context propagation**: All methods take `context.Context` for cancellation and deadlines.
-- **Request ID propagation**: Forwards `X-Request-ID` from context for distributed tracing.
-- **Token injection**: Bearer token set at client creation or refreshed via callback.
-
-Base client implementation lives in `chamicore-lib/httputil/client.go`:
-
-```go
-type ClientConfig struct {
-    BaseURL       string
-    Token         string
-    TokenRefresh  func(ctx context.Context) (string, error) // optional
-    Timeout       time.Duration
-    MaxRetries    int
-    RetryWaitMin  time.Duration
-    RetryWaitMax  time.Duration
-}
-```
-
-Each service builds its specific client on top of this base.
+Each service provides a typed client in `pkg/client/` built on `chamicore-lib/httputil/client/`.
+Features: typed structs (not raw JSON), automatic retries (429/502/503/504 with backoff),
+RFC 9457 error parsing, context propagation, request ID forwarding, token injection.
 
 ---
 
-## Observability (OpenTelemetry)
+## Observability
 
-> See [ADR-009](ARCHITECTURE/ADR-009-opentelemetry-observability.md) for the decision rationale.
+> Full details: [ADR-009](ARCHITECTURE/ADR-009-opentelemetry-observability.md).
 
-All services export metrics, traces, and (optionally) logs via [OpenTelemetry](https://opentelemetry.io/).
-The OTel SDK is initialized in `main.go` via helpers from `chamicore-lib/otel/`, so individual
-handlers and store implementations do not need to manage the SDK lifecycle.
-
-### Metrics
-
-Services export metrics using the OpenTelemetry Metrics SDK with OTLP exporter.
-A Prometheus-compatible scrape endpoint is also exposed for environments that prefer pull-based
-collection.
-
-#### Standard Metrics (every service)
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `http_server_request_duration_seconds` | Histogram | Request latency by method, route, status code |
-| `http_server_requests_total` | Counter | Total requests by method, route, status code |
-| `http_server_active_requests` | UpDownCounter | Currently in-flight requests |
-| `http_server_request_size_bytes` | Histogram | Request body size |
-| `http_server_response_size_bytes` | Histogram | Response body size |
-| `db_pool_connections_active` | UpDownCounter | Active database connections |
-| `db_pool_connections_idle` | UpDownCounter | Idle database connections |
-| `db_query_duration_seconds` | Histogram | Database query latency by operation |
-| `process_uptime_seconds` | Counter | Time since service started |
-
-#### Service-Specific Metrics (examples)
-
-| Service | Metric | Type | Description |
-|---------|--------|------|-------------|
-| SMD | `smd_components_total` | Gauge | Total registered components by type |
-| Discovery | `discovery_scan_duration_seconds` | Histogram | Scan duration by driver |
-| Discovery | `discovery_components_discovered_total` | Counter | Components found by driver and type |
-| Discovery | `discovery_bmc_response_duration_seconds` | Histogram | BMC response time by driver and vendor |
-| BSS | `bss_bootscripts_generated_total` | Counter | Boot scripts served by role/type |
-| Auth | `auth_tokens_issued_total` | Counter | JWT tokens issued (by type: user, service_account) |
-| Auth | `auth_failures_total` | Counter | Failed authentication/authorization attempts |
-| Auth | `auth_policy_decisions_total` | Counter | Casbin policy evaluations (by result: allow, deny) |
-
-#### Metric Attributes (Labels)
-
-Use consistent attribute names across all services:
-
-| Attribute | Example Values | Description |
-|-----------|---------------|-------------|
-| `http.method` | `GET`, `POST` | HTTP method |
-| `http.route` | `/hsm/v2/State/Components/{id}` | Route pattern (not expanded path) |
-| `http.status_code` | `200`, `404` | Response status code |
-| `service.name` | `chamicore-smd` | Service identifier |
-| `service.version` | `0.1.0` | Service build version |
-| `db.operation` | `SELECT`, `INSERT` | Database operation type |
-
-### Traces
-
-Distributed tracing connects requests across services. Traces propagate via
-`W3C Trace Context` headers (`traceparent`, `tracestate`).
-
-- The HTTP middleware automatically creates a span for each incoming request.
-- The base HTTP client (`chamicore-lib/httputil/client/`) propagates trace context
-  on outgoing requests, so inter-service calls form connected traces.
-- Database queries are instrumented with `db.statement` and `db.operation` span attributes.
-- Trace IDs are included in structured log output for correlation.
-
-### Exporters
-
-| Protocol | Endpoint | Purpose |
-|----------|----------|---------|
-| OTLP gRPC | Configurable (default `localhost:4317`) | Primary export to OTel Collector |
-| OTLP HTTP | Configurable (default `localhost:4318`) | Alternative OTLP transport |
-| Prometheus | `GET /metrics` | Pull-based scrape endpoint (no auth) |
-
-Services auto-detect the exporter based on configuration. The OTel Collector is the
-recommended deployment pattern: services push to a local collector, which fans out to
-backends (Prometheus, Jaeger, Grafana Tempo, etc.).
-
-### Configuration
-
-Environment variables follow [OTel SDK conventions](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/)
-plus service-specific settings:
-
-```bash
-# OTel SDK standard variables
-OTEL_SERVICE_NAME=chamicore-smd
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-OTEL_RESOURCE_ATTRIBUTES=service.version=0.1.0,deployment.environment=production
-
-# Chamicore-specific
-CHAMICORE_SMD_METRICS_ENABLED=true            # Enable/disable metrics (default: true)
-CHAMICORE_SMD_TRACES_ENABLED=true             # Enable/disable traces (default: true)
-CHAMICORE_SMD_PROMETHEUS_LISTEN_ADDR=:9090    # Prometheus scrape endpoint (default: :9090)
-```
-
-### Implementation in chamicore-lib
-
-The `otel/` package in `chamicore-lib` provides:
-
-```go
-// Initialize in main.go:
-shutdown, err := otelutil.Init(ctx, otelutil.Config{
-    ServiceName:    "chamicore-smd",
-    ServiceVersion: version,
-    OTLPEndpoint:   cfg.OTLPEndpoint,
-    PrometheusAddr: cfg.PrometheusAddr,
-    MetricsEnabled: cfg.MetricsEnabled,
-    TracesEnabled:  cfg.TracesEnabled,
-})
-defer shutdown(ctx)
-
-// Middleware (automatically instruments HTTP handlers):
-r.Use(otelutil.HTTPMetrics())    // Records request duration, count, size
-r.Use(otelutil.HTTPTracing())    // Creates spans, propagates trace context
-
-// Database instrumentation (wraps *sql.DB):
-db := otelutil.InstrumentDB(rawDB, "chamicore_smd")
-```
-
-### Prometheus Endpoint
-
-Every service exposes `GET /metrics` (no auth required) serving Prometheus-format metrics.
-This is in addition to OTLP push, allowing both pull and push collection models.
-The `/metrics` endpoint is listed alongside other operational endpoints:
-
-| Endpoint | Purpose | Auth Required |
-|----------|---------|---------------|
-| `GET /health` | Liveness probe | No |
-| `GET /readiness` | Readiness probe | No |
-| `GET /version` | Build info | No |
-| `GET /metrics` | Prometheus metrics | No |
-| `GET /api/docs` | Swagger UI | No |
-| `GET /api/openapi.yaml` | OpenAPI spec | No |
-
-### Development Environment
-
-The Docker Compose dev stack (in `chamicore-deploy`) includes:
-- **OTel Collector**: Receives OTLP from all services.
-- **Prometheus**: Scrapes `/metrics` endpoints and collector.
-- **Grafana**: Pre-configured dashboards for Chamicore services.
-- **Jaeger** (or Grafana Tempo): Trace visualization.
+All services export metrics and traces via OpenTelemetry. OTel SDK is initialized in
+`main.go` via `otelutil.Init(ctx, otelutil.Config{...})`. Middleware handles HTTP
+instrumentation automatically. Prometheus endpoint at `GET /metrics`.
 
 ---
 
@@ -1286,131 +360,71 @@ The Docker Compose dev stack (in `chamicore-deploy`) includes:
 
 ### Shared PostgreSQL, Per-Service Schemas
 
-- One PostgreSQL instance (or cluster) with a single `chamicore` database.
-- Each service gets its own **schema** within that database: `smd`, `bss`, `cloudinit`, `auth`, `discovery`.
-- Services never access another service's schema directly. Use HTTP APIs.
+- One PostgreSQL instance, single `chamicore` database.
+- Per-service schemas: `smd`, `bss`, `cloudinit`, `auth`, `discovery`.
+- Services never access another service's schema. Use HTTP APIs.
 - Each service sets `search_path` to its own schema on connection.
-- Connection via DSN from environment variable.
-- Connection pools sized per service to prevent contention under boot-storm load.
-  See [ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md) for pool allocation budget.
-  Configure via `CHAMICORE_<SERVICE>_DB_MAX_OPEN_CONNS`, `CHAMICORE_<SERVICE>_DB_MAX_IDLE_CONNS`,
-  `CHAMICORE_<SERVICE>_DB_CONN_MAX_LIFETIME`, `CHAMICORE_<SERVICE>_DB_CONN_MAX_IDLE_TIME`.
+- Pool sizing via `CHAMICORE_<SERVICE>_DB_MAX_OPEN_CONNS`, `_MAX_IDLE_CONNS`,
+  `_CONN_MAX_LIFETIME`, `_CONN_MAX_IDLE_TIME`.
 
 ### Migrations
 
 - Use [golang-migrate](https://github.com/golang-migrate/migrate) with PostgreSQL driver.
-- Migration files in `migrations/postgres/` with numbered format:
-  ```
-  000001_create_components.up.sql
-  000001_create_components.down.sql
-  ```
-- Migrations run automatically on service startup (configurable).
-- Always provide both `up` and `down` migrations.
-- Never modify an existing migration that has been released. Create a new one.
+- Files: `migrations/postgres/000001_create_<table>.up.sql` / `.down.sql`.
+- Run automatically on startup. Always provide both up and down. Never modify released migrations.
 
 ### Query Building
 
-- Use [Masterminds/squirrel](https://github.com/Masterminds/squirrel) for building SQL queries.
-- Use `squirrel.Dollar` placeholder format (PostgreSQL style: `$1`, `$2`).
+- Use [Masterminds/squirrel](https://github.com/Masterminds/squirrel) with `squirrel.Dollar` (PostgreSQL `$1`, `$2`).
 - Use `lib/pq` as the PostgreSQL driver.
-- Define a `Store` interface in `internal/store/` and implement `PostgresStore`.
+- Define `Store` interface in `internal/store/`, implement `PostgresStore`.
 
 ### Transactions
 
-- Use `sql.Tx` for any store method that writes to **multiple tables** in one operation
-  (e.g., creating a component with its ethernet interfaces).
-- Begin the transaction in the **store method**, not the handler.
-- Always `defer tx.Rollback()` immediately after `BeginTx`. The deferred rollback is
-  a no-op if `tx.Commit()` has already been called.
-- Do NOT use transactions for single-table writes — the overhead is unnecessary.
-
-```go
-func (s *PostgresStore) CreateWithInterfaces(ctx context.Context, c model.Component, ifaces []model.Interface) error {
-    tx, err := s.db.BeginTx(ctx, nil)
-    if err != nil {
-        return fmt.Errorf("begin tx: %w", err)
-    }
-    defer tx.Rollback()
-
-    // Insert component
-    // Insert interfaces (in a loop)
-
-    return tx.Commit()
-}
-```
-
-### ID Generation
-
-| Resource | ID Strategy |
-|----------|-------------|
-| Components (SMD) | Client-provided (validated against `identity.ValidateID`). Server generates `<type>-<8hex>` via `identity.GenerateID` if omitted. |
-| Ethernet interfaces (SMD) | Server-generated UUID v4 (`gen_random_uuid()` in PostgreSQL). |
-| Boot params (BSS) | Server-generated UUID v4. |
-| Cloud-Init payloads | Server-generated UUID v4. |
-| Scan jobs (Discovery) | Server-generated UUID v4. |
-| Discovery targets | Server-generated UUID v4. |
-| Service accounts (Auth) | Server-generated UUID v4. |
-| Device credentials (Auth) | Server-generated UUID v4. |
-| Auth policies | Casbin-managed (composite key). |
-
-Use `crypto/rand`-based UUID generation (or PostgreSQL's `gen_random_uuid()`), never `math/rand`.
+- Use `sql.Tx` only for multi-table writes. Begin in the **store method**, not the handler.
+- Always `defer tx.Rollback()` immediately after `BeginTx`.
+- Do NOT use transactions for single-table writes.
 
 ### Schema Conventions
 
 - Table names: `snake_case`, plural (`components`, `boot_params`).
-- Column names: `snake_case`.
-- Primary keys: Prefer meaningful string identifiers (e.g., component ID) over auto-increment where appropriate.
-- Timestamps: `created_at`, `updated_at` as `TIMESTAMPTZ`, defaulting to `NOW()`.
-- Use `TEXT` over `VARCHAR` unless there is a specific length constraint.
+- Column names: `snake_case`. Primary keys: meaningful strings where appropriate.
+- Timestamps: `created_at`, `updated_at` as `TIMESTAMPTZ`, default `NOW()`.
+- Use `TEXT` over `VARCHAR` unless there's a specific length constraint.
+
+### ID Generation
+
+| Resource | Strategy |
+|----------|----------|
+| Components (SMD) | Client-provided (validated) or server-generated `<type>-<8hex>` |
+| Most other resources | Server-generated UUID v4 (`gen_random_uuid()`) |
+| Auth policies | Casbin-managed (composite key) |
+
+Use `crypto/rand`, never `math/rand`.
 
 ---
 
 ## Security Patterns
 
-### Authentication and Authorization
+### Authentication Flow
 
-- **chamicore-auth** is the single auth service (see [ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md)).
-- It federates with external IdPs (Keycloak, Okta, Azure AD, GitHub) via OIDC.
-- External identity tokens are exchanged for short-lived, scoped Chamicore JWTs.
-- Services validate JWTs on incoming requests using middleware from `chamicore-lib/auth`.
-- Services fetch JWKS from chamicore-auth at startup and periodically refresh.
-- JWT claims include `scope` (permissions), `roles` (Casbin roles), and standard fields.
-- Middleware extracts claims and makes them available to handlers via context.
-- Per-route scope enforcement via `auth.RequireScope()` middleware.
+- **chamicore-auth** is the single auth service ([ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md)).
+- Federates with external IdPs (Keycloak, Okta, Azure AD, GitHub) via OIDC.
+- External tokens exchanged for short-lived, scoped Chamicore JWTs.
+- Services validate JWTs via `chamicore-lib/auth` middleware + JWKS from chamicore-auth.
+- Per-route scope enforcement: `auth.RequireScope()`.
+- Casbin RBAC/ABAC policies managed via chamicore-auth API; scopes enforced locally.
 
-### Authorization Policies (Casbin)
+### Service-to-Service Auth (Internal Token)
 
-- RBAC and ABAC policies are managed via chamicore-auth's API.
-- Policies determine what scopes are embedded in tokens at issuance time.
-- Services enforce scopes locally without calling chamicore-auth on every request.
-- CLI provides policy management commands: `chamicore auth policy list`, `chamicore auth role add`.
-
-### Service-to-Service Authentication (Internal Token)
-
-Internal microservice-to-microservice calls use a **shared pre-shared token** rather
-than the full JWT/OIDC flow. All Chamicore services in the same deployment share a
-single secret configured via environment variable:
-
+All internal microservice calls use a shared pre-shared token:
 ```
 CHAMICORE_INTERNAL_TOKEN=<random-256-bit-hex-string>
 ```
-
-- Services send this token as `Authorization: Bearer <internal-token>` on outgoing
-  inter-service HTTP calls.
-- The `auth.JWTMiddleware` recognizes the internal token before attempting JWT
-  validation. When matched, it injects a synthetic internal claims object
-  (`sub: "internal"`, all scopes granted, `internal: true` flag).
-- This avoids circular dependencies (e.g., BSS does not need to call chamicore-auth
-  to get a token before calling SMD — all services already share the secret).
-- The internal token is **never exposed to external clients**. External users and
-  automation use JWTs issued by chamicore-auth.
-- In development (`DEV_MODE=true`), the internal token check is skipped along with
-  JWT validation.
-
-**Service accounts** in chamicore-auth are a resource type for **external consumers**
-(CI/CD pipelines, automation scripts, monitoring) — not for internal service-to-service
-calls. External consumers authenticate via `client_id`/`client_secret` to get a
-scoped JWT, then use that JWT to call service APIs.
+- Sent as `Authorization: Bearer <internal-token>` on inter-service HTTP calls.
+- `auth.JWTMiddleware` recognizes it before JWT validation, injects synthetic internal
+  claims (`sub: "internal"`, all scopes, `internal: true`).
+- **Never exposed to external clients.** External users/automation use JWTs.
 
 | Caller | Auth Mechanism | Token Type |
 |--------|---------------|------------|
@@ -1418,21 +432,12 @@ scoped JWT, then use that JWT to call service APIs.
 | External automation / CI | Service account in chamicore-auth | JWT (`sa: true` claim) |
 | Internal microservice | `CHAMICORE_INTERNAL_TOKEN` | Pre-shared secret |
 
+**Service accounts** are for **external consumers** (CI/CD, automation), not internal s2s calls.
+
 ### Development Mode
 
-- When `CHAMICORE_<SERVICE>_DEV_MODE=true`, JWT validation and internal token checks
-  are bypassed.
-- A synthetic claims object with admin permissions and all scopes is injected.
-- **Dev mode must never be enabled in production.** Log a prominent warning on startup.
-
-### API Security
-
-- External client-to-service communication uses JWT bearer tokens from chamicore-auth.
-- Internal service-to-service communication uses a shared `CHAMICORE_INTERNAL_TOKEN`.
-- HTTPS in production (terminated at ingress/load balancer).
-- No secrets in environment variable names or log output.
-- Use Kubernetes secrets or environment variables for sensitive configuration.
-- All auth events are audit-logged by chamicore-auth (token issuance, denials, revocations).
+- `CHAMICORE_<SERVICE>_DEV_MODE=true` bypasses JWT and internal token checks.
+- Injects synthetic admin claims. **Must never be enabled in production.**
 
 ---
 
@@ -1447,105 +452,17 @@ scoped JWT, then use that JWT to call service APIs.
 | Query builder | Masterminds/squirrel | `github.com/Masterminds/squirrel` |
 | Migrations | golang-migrate/migrate/v4 | `github.com/golang-migrate/migrate/v4` |
 | Authorization | casbin/casbin/v2 | `github.com/casbin/casbin/v2` |
-| Casbin PG adapter | casbin/gorm-adapter/v3 | `github.com/casbin/gorm-adapter/v3` |
 | CLI framework | spf13/cobra | `github.com/spf13/cobra` |
 | OTel SDK | opentelemetry-go | `go.opentelemetry.io/otel` |
-| OTel metrics | opentelemetry-go metric | `go.opentelemetry.io/otel/metric` |
-| OTel tracing | opentelemetry-go trace | `go.opentelemetry.io/otel/trace` |
-| OTel OTLP exporter | opentelemetry-go exporters | `go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc` |
-| OTel Prometheus | opentelemetry-go prometheus | `go.opentelemetry.io/otel/exporters/prometheus` |
-| Prometheus client | prometheus/client_golang | `github.com/prometheus/client_golang` |
 | Test assertions | stretchr/testify | `github.com/stretchr/testify` |
-| Test containers | testcontainers/testcontainers-go | `github.com/testcontainers/testcontainers-go` |
-| Event bus (Phase 2) | nats-io/nats.go | `github.com/nats-io/nats.go` |
-| NATS JetStream (Phase 2) | nats-io/nats.go/jetstream | `github.com/nats-io/nats.go/jetstream` |
+| Test containers | testcontainers-go | `github.com/testcontainers/testcontainers-go` |
+| Events (Phase 2) | nats-io/nats.go | `github.com/nats-io/nats.go` |
 
-**Frontend (chamicore-ui)**
+### Banned Dependencies
 
-| Purpose | Library | Notes |
-|---------|---------|-------|
-| Framework | Vue.js 3 | Composition API, `<script setup>` syntax |
-| Build tool | Vite | Fast HMR for development, optimized production builds |
-| State management | Pinia | Official Vue.js state management |
-| Routing | Vue Router 4 | Client-side SPA routing |
-| HTTP client | Axios or fetch wrapper | Calls BFF backend only, never microservices directly |
-| UI components | PrimeVue or Vuetify | Production-ready component library (TBD) |
-| Language | TypeScript | Strict mode enabled |
-| Testing | Vitest + Vue Test Utils | Unit testing for components and stores |
-| E2E testing | Playwright | Browser-based end-to-end tests |
-| Linting | ESLint + Prettier | Enforced in CI |
-
-### What NOT to Use
-
-Do not introduce these dependencies (they are legacy from upstream OpenCHAMI):
-- Any `Cray-HPE/hms-*` libraries
-- `hashicorp/vault` (use env vars + k8s secrets)
-- `etcd` (use PostgreSQL)
-- `Shopify/sarama` or any Kafka client (use NATS JetStream per ADR-015)
-- `marcboeker/go-duckdb` (use PostgreSQL)
-- `mattn/go-sqlite3` (use PostgreSQL)
-- `gorilla/handlers` (use go-chi middleware)
-- `sirupsen/logrus` (use zerolog)
-- `ory/hydra` (chamicore-auth federates with external IdPs directly)
-- `OpenCHAMI/opaal` (replaced by chamicore-auth)
-
----
-
-## How to Add a New Service
-
-1. Create a new repository on `git.cscs.ch/openchami/chamicore-<service>`.
-2. Initialize with the standard service layout (see above).
-3. Set up `go.mod` with module path `git.cscs.ch/openchami/chamicore-<service>`.
-4. Add `chamicore-lib` as a dependency for shared packages.
-5. Implement the minimal structure:
-   - `cmd/<service>/main.go` - Load config, set up logger, create store, start server.
-   - `internal/config/config.go` - Config struct with env var loading.
-   - `internal/store/store.go` - Store interface.
-   - `internal/store/postgres.go` - PostgreSQL implementation.
-   - `internal/server/server.go` - Chi router, middleware, handler registration.
-   - `internal/server/handlers.go` - HTTP handler functions.
-6. Add migration files in `migrations/postgres/`.
-7. Create `api/openapi.yaml` defining the API contract.
-8. Add the repo as a submodule in this monorepo:
-   ```bash
-   git submodule add git@git.cscs.ch:openchami/chamicore-<service>.git services/chamicore-<service>
-   ```
-9. Update the top-level Makefile to include the new service.
-10. Add the service to `chamicore-deploy` Docker Compose and Helm charts.
-
----
-
-## Working with Submodules
-
-### Initial Clone
-
-```bash
-git clone --recurse-submodules git@git.cscs.ch:openchami/chamicore.git
-```
-
-### Update All Submodules
-
-```bash
-git submodule update --remote --merge
-```
-
-### Work on a Specific Service
-
-```bash
-cd services/chamicore-smd
-git checkout -b feature/my-feature
-# ... make changes, commit, push ...
-cd ../..
-git add services/chamicore-smd
-git commit -m "update chamicore-smd submodule"
-```
-
-### Add a New Submodule
-
-```bash
-git submodule add git@git.cscs.ch:openchami/chamicore-<name>.git services/chamicore-<name>
-git commit -m "add chamicore-<name> submodule"
-```
+Do NOT introduce (legacy from upstream OpenCHAMI):
+`Cray-HPE/hms-*`, `hashicorp/vault`, `etcd`, `Shopify/sarama` (Kafka),
+`go-duckdb`, `go-sqlite3`, `gorilla/handlers`, `sirupsen/logrus`, `ory/hydra`, `OpenCHAMI/opaal`.
 
 ---
 
@@ -1553,121 +470,32 @@ git commit -m "add chamicore-<name> submodule"
 
 ### Git Conventions
 
-- **Branch naming**: `<type>/<short-description>` — e.g., `feat/smd-component-crud`, `fix/bss-sync-etag`.
+- **Branch naming**: `<type>/<short-description>` (e.g., `feat/smd-component-crud`).
   Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
-- **Commit messages**: Imperative mood, max 72 characters on the first line. Reference the
-  task ID from `IMPLEMENTATION.md` when applicable.
-  ```
-  P2.1: implement component CRUD handlers and store
+- **Commit messages**: Imperative mood, max 72 chars first line. Reference task ID.
+  One commit per completed task (squash if needed). Merge to `main` via MR.
 
-  - Add Component model with ADR-010 ID validation
-  - Implement PostgresStore with squirrel queries
-  - Add handler tests with mock store
-  - Add integration tests with testcontainers
-  ```
-- **One commit per completed task** (squash if needed before merge).
-- **Merge request into `main`** for each completed task or logical group of tasks.
+### Per-Service Pipeline
 
-### Per-Service Pipeline (`.gitlab-ci.yml`)
+1. Lint: `golangci-lint run`
+2. Unit test: `go test -coverprofile=coverage.out -race ./...` (100% coverage enforced)
+3. Integration test: `go test -tags integration -race ./...`
+4. Build: `go build ./cmd/<service>/`
+5. Docker: Build and push container image
+6. Release: GoReleaser for tagged releases (`vMAJOR.MINOR.PATCH`)
 
-Each service has its own GitLab CI pipeline that runs:
-1. **Lint**: `golangci-lint run`
-2. **Unit test**: `go test -coverprofile=coverage.out -race ./...` (100% coverage enforced)
-3. **Integration test**: `go test -tags integration -race ./...` (real PostgreSQL via testcontainers)
-4. **Build**: `go build ./cmd/<service>/`
-5. **Docker**: Build and push container image
-6. **Release**: GoReleaser for tagged releases
-
-### Monorepo Pipeline
-
-The top-level repo has a pipeline that:
-1. Validates submodule references are on tagged commits (for releases)
-2. Runs system integration tests across services (Docker Compose-based full stack)
-3. Runs smoke tests to verify deployment health
-4. Tests cross-service workflows (boot path, auth flow, discovery) as regression checks
-5. Failures block merges to main
-
-### Nightly Performance Pipeline
-
-A scheduled nightly pipeline runs on a dedicated runner with sufficient resources:
-1. Deploys the full stack via Docker Compose
-2. Runs smoke tests (gate)
-3. Runs the full load test suite (k6, 10,000+ VUs, ~15-30 minutes)
-4. Compares results against `tests/load/baselines.json`
-5. Fails and alerts if any metric exceeds its regression threshold
-6. Publishes results to Grafana for historical tracking
-
-### Release and Versioning Strategy
-
-All Chamicore repositories use [Semantic Versioning 2.0](https://semver.org/) with
-Go module conventions and [GoReleaser](https://goreleaser.com/) for automated builds.
-
-#### Version Tags
-
-- Format: `vMAJOR.MINOR.PATCH` (e.g., `v0.1.0`, `v1.2.3`).
-- Tags are applied per-repository (each submodule is independently versioned).
-- The monorepo umbrella (`chamicore`) is tagged to track a known-good combination
-  of submodule versions: `v0.1.0` means all submodule refs at that commit are compatible.
-- Pre-release versions: `v0.1.0-rc.1`, `v0.1.0-alpha.1` for release candidates.
-- **During initial development (v0.x.y)**, minor version bumps may include breaking changes.
-  Stable API guarantees begin at v1.0.0.
-
-#### Versioning Rules
-
-| Change | Version Bump | Example |
-|--------|-------------|---------|
-| Bug fix, no API change | PATCH | v0.1.0 → v0.1.1 |
-| New feature, backward-compatible | MINOR | v0.1.1 → v0.2.0 |
-| Breaking API change | MAJOR | v0.2.0 → v1.0.0 |
-
-#### Release Workflow
-
-1. All work happens on feature branches (`feat/...`, `fix/...`).
-2. Merge to `main` via merge request (CI must pass).
-3. To release: create an annotated tag on `main`:
-   ```bash
-   git tag -a v0.1.0 -m "v0.1.0: initial SMD and BSS"
-   git push origin v0.1.0
-   ```
-4. The CI pipeline detects the tag and runs GoReleaser, which:
-   - Builds binaries for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
-   - Creates a GitLab release with changelog (from conventional commits).
-   - Builds and pushes a Docker image tagged `v0.1.0` and `latest`.
-5. The monorepo `chamicore` is then updated to point submodules at their new tags
-   and receives its own version tag.
-
-#### GoReleaser Configuration
-
-Each service includes `.goreleaser.yml` (from the template). Key settings:
-- `builds[0].main`: `./cmd/<service>/`
-- `builds[0].ldflags`: Injects `-X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}`
-- `dockers[0].image_templates`: `git.cscs.ch:5050/openchami/chamicore-<service>:{{.Version}}`
-- `changelog.use`: `github-native` (or `gitlab` equivalent)
-
-#### Build Info in Binaries
-
-Every binary embeds version, commit SHA, and build date via linker flags. The
-`/version` endpoint and `--version` CLI flag return this information:
-
-```go
-var (
-    version = "dev"
-    commit  = "unknown"
-    date    = "unknown"
-)
-```
+> For release workflow, versioning strategy, and nightly performance pipelines, see
+> the `.goreleaser.yml` template and [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md).
 
 ---
 
 ## Progressive Development Approach
 
-Start minimal and add complexity only when justified:
-
-1. **No premature abstraction** - Write concrete code first. Extract interfaces when you have 2+ implementations or need testing seams.
-2. **No premature optimization** - Profile before optimizing. Correct code first.
-3. **No speculative features** - Implement what is needed now, not what might be needed.
-4. **Consistent patterns** - When a pattern is established in one service, follow it in others.
-5. **Document decisions** - Add ADRs in `ARCHITECTURE/` for significant technical decisions.
+1. **No premature abstraction** — Concrete code first. Extract interfaces for 2+ implementations or testing seams.
+2. **No premature optimization** — Profile before optimizing. Correct code first.
+3. **No speculative features** — Implement what is needed now.
+4. **Consistent patterns** — Follow established patterns across services.
+5. **Document decisions** — Add ADRs in `ARCHITECTURE/` for significant decisions.
 
 ---
 
@@ -1683,10 +511,8 @@ make test              # Run unit tests
 make test-cover        # Run unit tests with 100% coverage enforcement
 make test-integration  # Run per-service integration tests (needs Docker)
 make test-system       # Run cross-service system tests (starts full stack)
-make test-smoke        # Run smoke tests (quick health check against live stack)
+make test-smoke        # Run smoke tests against live stack
 make test-load         # Run full load/performance tests (requires k6)
-make test-load-quick   # Abbreviated load test (1,000 VUs, 2 min)
-make test-all          # Run all test levels (unit + integration + system + smoke)
 make lint              # Lint all services
 make docker-build      # Build all Docker images
 make compose-up        # Start dev environment
@@ -1702,153 +528,87 @@ CHAMICORE_SMD_LOG_LEVEL=info
 CHAMICORE_SMD_JWKS_URL=http://localhost:3333/.well-known/jwks.json
 CHAMICORE_INTERNAL_TOKEN=<random-256-bit-hex-string>
 CHAMICORE_SMD_DEV_MODE=false
-CHAMICORE_SMD_PROMETHEUS_LISTEN_ADDR=:9090
 OTEL_SERVICE_NAME=chamicore-smd
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
 ### Component Identifiers
 
-Chamicore uses **flat opaque string IDs** for components (see [ADR-010](ARCHITECTURE/ADR-010-component-identifiers.md)).
-Physical location is queryable metadata, not encoded in the ID.
+Flat opaque string IDs ([ADR-010](ARCHITECTURE/ADR-010-component-identifiers.md)).
+Format: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}[a-zA-Z0-9]$`
 
-```
-node-a1b2c3              # A compute node
-bmc-d4e5f6               # A BMC
-gpu-node-01              # Operator-assigned meaningful name
-x3000c0s1b0n0            # xname string (accepted for compatibility)
-```
-
-ID format: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}[a-zA-Z0-9]$`
-
-Component types: `Cabinet`, `BMC`, `Node`, `Processor`, `Memory`, `Accelerator`,
-`NIC`, `Drive`, `PDU`, `Switch`.
-
-Location metadata (optional):
-```json
-{"rack": "R12", "unit": 17, "slot": 0, "subSlot": 0}
-```
-
-Hierarchy: `parent_id` foreign key (e.g., node -> BMC -> cabinet). Query ancestors
-via joins, not string manipulation.
+Types: `Cabinet`, `BMC`, `Node`, `Processor`, `Memory`, `Accelerator`, `NIC`, `Drive`, `PDU`, `Switch`.
+Location: optional metadata `{"rack":"R12","unit":17,"slot":0}`.
+Hierarchy: `parent_id` foreign key. Xnames accepted for compatibility.
 
 ---
 
 ## AI Agent Implementation Guide
 
-This project is built entirely by AI coding agents. This section contains mandatory
-instructions for any agent working on Chamicore code.
-
 ### Before You Start: Context Loading
 
-**Always read these files first** (in order) before implementing anything:
-
-1. **This file** (`AGENTS.md`) — Architecture, conventions, patterns
-2. **`IMPLEMENTATION.md`** — Phased task breakdown, dependencies, acceptance criteria
-3. **`templates/`** — Reference code templates; the golden patterns to follow
-4. **The relevant ADR(s)** — For the service/feature you're implementing
+**Always read these files first** before implementing anything:
+1. This file (`AGENTS.md`), 2. `IMPLEMENTATION.md`, 3. `templates/`, 4. Relevant ADR(s).
 
 **Per-task context loading:**
 
 | Working On | Also Read |
 |-----------|-----------|
-| chamicore-bss | `ARCHITECTURE/ADR-014-boot-path-data-flow.md` (self-sufficiency, sync loop, MAC denormalization) |
-| chamicore-cloud-init | `ARCHITECTURE/ADR-014-boot-path-data-flow.md` (self-sufficiency, sync loop, payload serving) |
-| chamicore-lib | `templates/service/` (to understand what consumers need) |
-| chamicore-auth | `ARCHITECTURE/ADR-011-consolidated-auth-service.md` |
-| chamicore-smd | `ARCHITECTURE/ADR-010-component-identifiers.md`, upstream `OpenCHAMI/smd` API for reference |
-| chamicore-bss | Upstream `OpenCHAMI/bss` API for reference |
-| chamicore-cloud-init | Upstream `OpenCHAMI/cloud-init` API for reference |
-| chamicore-kea-sync | Kea Control Agent API docs, `ARCHITECTURE/ADR-015-event-driven-architecture.md` (event consumer for sync triggers) |
-| chamicore-discovery | `ARCHITECTURE/ADR-013-dedicated-discovery-service.md`, Redfish/DMTF spec for driver implementation |
-| chamicore-ui | Vue.js 3 Composition API docs, the BFF pattern section above |
-| chamicore-cli | Cobra library docs, each service's `pkg/client/` |
-| chamicore-deploy | `ARCHITECTURE/ADR-008-deployment-strategy.md`, `ARCHITECTURE/ADR-015-event-driven-architecture.md` (NATS container in dev stack) |
-| Any service handler | `templates/service/internal/server/handlers.go` (reference CRUD pattern) |
-| Any store implementation | `templates/service/internal/store/postgres.go` (reference squirrel pattern) |
-| Any client SDK | `templates/service/pkg/client/client.go` (reference client pattern) |
+| chamicore-bss, cloud-init | [ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md) |
+| chamicore-auth | [ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md) |
+| chamicore-smd | [ADR-010](ARCHITECTURE/ADR-010-component-identifiers.md), upstream `OpenCHAMI/smd` |
+| chamicore-discovery | [ADR-013](ARCHITECTURE/ADR-013-dedicated-discovery-service.md) |
+| chamicore-kea-sync | Kea Control Agent API docs, [ADR-015](ARCHITECTURE/ADR-015-event-driven-architecture.md) |
+| Any handler | `templates/service/internal/server/handlers.go` |
+| Any store | `templates/service/internal/store/postgres.go` |
+| Any client SDK | `templates/service/pkg/client/client.go` |
 
-### Agent Workflow (mandatory steps)
-
-Follow this workflow for **every** implementation task:
+### Agent Workflow (mandatory)
 
 ```
-1. READ context    → Load AGENTS.md + IMPLEMENTATION.md + relevant templates
-2. UNDERSTAND task → Read the task's acceptance criteria in IMPLEMENTATION.md
-3. CHECK deps      → Verify prerequisite tasks are complete (code exists, tests pass)
+1. READ context    → AGENTS.md + IMPLEMENTATION.md + relevant templates + ADRs
+2. UNDERSTAND task → Read acceptance criteria in IMPLEMENTATION.md
+3. CHECK deps      → Verify prerequisite tasks are complete
 4. COPY template   → Start from templates/service/, not from scratch
-5. IMPLEMENT       → Follow the template patterns exactly
+5. IMPLEMENT       → Follow template patterns exactly
 6. TEST            → Write tests FIRST where practical; achieve 100% coverage
-7. LINT            → Run golangci-lint; fix all warnings
+7. LINT            → golangci-lint; fix all warnings
 8. VERIFY          → Check against acceptance criteria
-9. COMMIT          → Descriptive commit message referencing the task
+9. COMMIT          → Descriptive message referencing the task
 ```
 
-**Critical rule**: Do NOT invent new patterns. Every pattern exists in either
-`templates/service/` or in a previously-implemented service. If you're unsure
-how to implement something, find the closest existing example and adapt it.
+**Critical rule**: Do NOT invent new patterns. Every pattern exists in `templates/service/`
+or in a previously-implemented service.
 
 ### Code Generation Rules
 
-These rules are non-negotiable. Violating them produces code that other agents
-(and humans) will have to fix later.
-
-#### Follow the Templates Exactly
-
-The `templates/service/` directory contains the **canonical implementation** of every
-file in a service. When implementing a new service:
-
-1. Copy the template directory structure
-2. Replace all `__PLACEHOLDER__` markers with service-specific values
-3. Add service-specific logic **within** the established structure
-4. Do NOT reorganize, rename, or "improve" the directory layout
-
-#### Imports and Dependencies
+#### Imports
 
 ```go
 // CORRECT: Use chamicore-lib packages
 import "git.cscs.ch/openchami/chamicore-lib/auth"
 import "git.cscs.ch/openchami/chamicore-lib/httputil"
 import "git.cscs.ch/openchami/chamicore-lib/dbutil"
-import "git.cscs.ch/openchami/chamicore-lib/otel"
 
-// WRONG: Do not import between services' internal packages
+// WRONG: Never import between services' internal packages
 import "git.cscs.ch/openchami/chamicore-smd/internal/store"  // NEVER
 
-// WRONG: Do not use banned libraries
-import "github.com/sirupsen/logrus"    // Use rs/zerolog
-import "github.com/gorilla/handlers"   // Use go-chi middleware
-import "github.com/mattn/go-sqlite3"   // Use lib/pq (PostgreSQL)
+// WRONG: Never use banned libraries (see Banned Dependencies above)
 ```
 
 #### Function Signatures
 
 ```go
-// CORRECT: Context first, return (result, error)
+// Store: context first, return (result, error)
 func (s *PostgresStore) GetComponent(ctx context.Context, id string) (*model.Component, error)
 
-// WRONG: No context, bare error return
-func (s *PostgresStore) GetComponent(id string) *model.Component
-
-// CORRECT: Handler signature
+// Handler: standard http signature, no return values
 func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request)
-
-// WRONG: Return values on handlers
-func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) error
 ```
 
-#### Error Handling
+#### Error Handling in Handlers
 
 ```go
-// CORRECT: Wrap with context, use sentinel errors
-if err != nil {
-    return nil, fmt.Errorf("querying component %s: %w", id, err)
-}
-if errors.Is(err, sql.ErrNoRows) {
-    return nil, ErrNotFound
-}
-
-// CORRECT: Handler maps domain error to HTTP response
 component, err := s.store.GetComponent(ctx, id)
 if errors.Is(err, store.ErrNotFound) {
     httputil.Problem(w, r, http.StatusNotFound, "Component %s not found", id)
@@ -1859,218 +619,95 @@ if err != nil {
     s.log.Error().Err(err).Str("id", id).Msg("failed to get component")
     return
 }
-
-// WRONG: Panic on errors
-if err != nil {
-    panic(err)  // NEVER in handlers or store
-}
-
-// WRONG: Log deep in the store layer
-func (s *PostgresStore) GetComponent(ctx context.Context, id string) (*model.Component, error) {
-    log.Error().Err(err).Msg("query failed")  // Don't log here; let the handler log
-    return nil, err
-}
 ```
+- Wrap errors with context: `fmt.Errorf("querying component %s: %w", id, err)`
+- Use sentinel errors: `errors.Is(err, sql.ErrNoRows) → ErrNotFound`
+- Never panic in handlers or store. Never log deep in the store layer.
 
 #### HTTP Responses
 
 ```go
-// CORRECT: Use envelope pattern with proper status codes
-func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
-    // ... validate, create ...
-    resource := httputil.Resource[types.ComponentSpec]{
-        Kind:       "Component",
-        APIVersion: "hsm/v2",
-        Metadata:   httputil.Metadata{ID: comp.ID, CreatedAt: comp.CreatedAt, UpdatedAt: comp.UpdatedAt},
-        Spec:       toSpec(comp),
-    }
-    w.Header().Set("Location", fmt.Sprintf("/hsm/v2/State/Components/%s", comp.ID))
-    httputil.JSON(w, http.StatusCreated, resource)
-}
-
-// WRONG: Return raw spec without envelope
-httputil.JSON(w, http.StatusOK, component)
-
-// WRONG: Wrong status code
-httputil.JSON(w, http.StatusOK, resource)  // POST should return 201, not 200
-
-// WRONG: Missing Location header on 201
-w.WriteHeader(http.StatusCreated)
+// POST → 201 + Location header + envelope
+resource := httputil.Resource[types.Spec]{Kind: "Component", APIVersion: "hsm/v2", ...}
+w.Header().Set("Location", fmt.Sprintf("/hsm/v2/State/Components/%s", id))
+httputil.JSON(w, http.StatusCreated, resource)
 ```
+- Always use the envelope pattern. Never return raw specs.
+- Correct status codes (see table above). POST=201, DELETE=204.
 
 #### Database Queries
 
 ```go
-// CORRECT: Squirrel with dollar placeholders, context propagated
-func (s *PostgresStore) GetComponent(ctx context.Context, id string) (*model.Component, error) {
-    query, args, err := s.sb.Select("id", "type", "state", "role", "nid", "created_at", "updated_at").
-        From("components").
-        Where(squirrel.Eq{"id": id}).
-        ToSql()
-    if err != nil {
-        return nil, fmt.Errorf("building query: %w", err)
-    }
-
-    var c model.Component
-    err = s.db.QueryRowContext(ctx, query, args...).Scan(
-        &c.ID, &c.Type, &c.State, &c.Role, &c.NID, &c.CreatedAt, &c.UpdatedAt,
-    )
-    if errors.Is(err, sql.ErrNoRows) {
-        return nil, ErrNotFound
-    }
-    if err != nil {
-        return nil, fmt.Errorf("querying component %s: %w", id, err)
-    }
-    return &c, nil
-}
-
-// WRONG: String concatenation for SQL
-query := "SELECT * FROM components WHERE id = '" + id + "'"  // SQL INJECTION
-
-// WRONG: No context
-s.db.QueryRow(query, args...)  // Use QueryRowContext
+// Always use squirrel with dollar placeholders + context
+query, args, err := s.sb.Select("id", "type").From("components").Where(squirrel.Eq{"id": id}).ToSql()
+err = s.db.QueryRowContext(ctx, query, args...).Scan(&c.ID, &c.Type)
 ```
-
-#### Testing
-
-```go
-// CORRECT: Table-driven test with testify
-func TestGetComponent_NotFound(t *testing.T) {
-    t.Helper()
-    store := &mockStore{err: store.ErrNotFound}
-    srv := server.New(store, testConfig())
-    req := httptest.NewRequest(http.MethodGet, "/hsm/v2/State/Components/nonexistent", nil)
-    rec := httptest.NewRecorder()
-
-    srv.Router().ServeHTTP(rec, req)
-
-    assert.Equal(t, http.StatusNotFound, rec.Code)
-    var problem httputil.ProblemDetail
-    err := json.NewDecoder(rec.Body).Decode(&problem)
-    require.NoError(t, err)
-    assert.Equal(t, "Not Found", problem.Title)
-    assert.Contains(t, problem.Detail, "nonexistent")
-}
-
-// WRONG: No assertions
-func TestGetComponent(t *testing.T) {
-    // ... call handler ...
-    fmt.Println(rec.Body.String())  // Don't print; assert
-}
-
-// WRONG: Testing private implementation details
-func TestBuildQuery(t *testing.T) {
-    // Test through the public interface, not internal query building
-}
-```
+- Never use string concatenation for SQL. Always use `*Context` variants.
 
 ### Anti-Patterns (DO NOT)
 
-These are common mistakes that AI agents make on this project. Read carefully.
-
 | Anti-Pattern | Correct Approach |
 |-------------|-----------------|
-| Creating a `utils/` or `helpers/` package | Put helpers in the package that uses them, or in `chamicore-lib` if shared |
-| Adding `context.TODO()` in production code | Always propagate context from the caller |
-| Using `interface{}` or `any` for typed data | Use concrete types or generics (`Resource[T]`) |
-| Writing a custom HTTP router | Use go-chi. Always. |
-| Adding a `Base` or `Abstract` struct | Go uses composition, not inheritance. Embed concrete types. |
-| Creating a global logger | Pass `zerolog.Logger` via struct field or function parameter |
-| Using `init()` functions | Initialize explicitly in `main()` |
-| Returning `(int, error)` from handlers | Handlers write to `http.ResponseWriter` directly |
-| Adding blank line padding in functions | Keep functions tight. Blank lines separate logical sections, not every statement. |
-| Creating wrapper types for standard library types | Use `*sql.DB`, `http.Client`, etc. directly |
-| Adding comments that restate the code | Only comment non-obvious logic or "why" decisions |
-| Putting all types in one `types.go` file | Group types by domain concept across multiple files if needed |
-| Using `println` or `fmt.Printf` for debugging | Use `log.Debug()` from zerolog |
-| Importing a package for one function | Copy small utility functions rather than adding dependencies |
-| Using `os.Exit()` outside of `main()` | Return errors; let the caller decide |
-| Catching errors and not handling them | `_ = foo()` is almost always wrong. Handle or document why it's safe to ignore. |
-| Creating test fixtures in code | Use `testdata/` directory for fixture files |
-| Writing tests that depend on execution order | Each test must be independent. Use `t.Parallel()` where safe. |
-| Calling another service's HTTP API on the boot-serve path | Boot-path handlers (BSS bootscript, Cloud-Init payload) must serve from local DB only. See ADR-014. |
-| Requiring JWT auth on boot endpoints | Boot endpoints (`/boot/v1/bootscript`, `/cloud-init/<id>/*`) are unauthenticated. Nodes don't carry JWTs. |
+| Creating `utils/` or `helpers/` package | Put in the using package, or `chamicore-lib` if shared |
+| `context.TODO()` in production code | Always propagate context from caller |
+| `interface{}` or `any` for typed data | Use concrete types or generics |
+| Custom HTTP router | Use go-chi. Always. |
+| `Base` or `Abstract` struct | Go uses composition, not inheritance |
+| Global logger | Pass `zerolog.Logger` via struct field |
+| `init()` functions | Initialize in `main()` |
+| Returning `(int, error)` from handlers | Write to `http.ResponseWriter` directly |
+| Blank line padding in functions | Keep tight; blank lines for logical sections only |
+| Wrapper types for stdlib types | Use `*sql.DB`, `http.Client` directly |
+| Comments restating code | Only comment non-obvious "why" decisions |
+| `println`/`fmt.Printf` for debugging | Use `log.Debug()` from zerolog |
+| `os.Exit()` outside `main()` | Return errors; caller decides |
+| `_ = foo()` ignoring errors | Handle or document why safe to ignore |
+| Tests depending on execution order | Each test independent. Use `t.Parallel()` |
+| Cross-service HTTP on boot-serve path | BSS/Cloud-Init serve from local DB only ([ADR-014](ARCHITECTURE/ADR-014-boot-path-data-flow.md)) |
+| JWT auth on boot endpoints | Boot endpoints are unauthenticated |
 
 ### Verification Checklist
 
-Run this checklist **before marking any task as complete**:
-
 #### Code Quality
-- [ ] All code follows the template patterns in `templates/service/`
-- [ ] No banned dependencies imported (see "What NOT to Use" section)
-- [ ] No `context.TODO()` or `context.Background()` outside of `main()` or tests
-- [ ] All exported types and functions have doc comments
+- [ ] Code follows template patterns in `templates/service/`
+- [ ] No banned dependencies, no `context.TODO()` outside `main()`/tests
+- [ ] All exported types/functions have doc comments
 - [ ] `golangci-lint run` passes with zero warnings
-- [ ] `goimports` applied to all files
 
 #### Testing
 - [ ] `go test -race -coverprofile=coverage.out ./...` passes
-- [ ] `go tool cover -func=coverage.out` shows 100% coverage (or documented exclusions)
-- [ ] All error paths have tests
-- [ ] All validation edge cases have tests
-- [ ] HTTP handlers tested via `httptest` (status codes, response bodies, headers)
-- [ ] Store implementations have integration tests with `//go:build integration` tag
+- [ ] 100% coverage (or documented exclusions)
+- [ ] All error paths and validation edge cases tested
+- [ ] HTTP handlers tested via `httptest`
+- [ ] Store has integration tests with `//go:build integration` tag
 
 #### API Compliance
-- [ ] All endpoints match `api/openapi.yaml` spec (methods, paths, status codes, response shapes)
-- [ ] All responses use the resource envelope pattern (`kind`, `apiVersion`, `metadata`, `spec`)
-- [ ] All error responses follow RFC 9457 (Problem Details)
-- [ ] `ETag` header present on single-resource GETs
-- [ ] `Location` header present on POST 201 responses
-- [ ] `Content-Type: application/json` on all responses
-- [ ] Pagination works with `limit` and `offset` query parameters
-- [ ] Unknown JSON fields rejected (`DisallowUnknownFields`)
-
-#### Middleware
-- [ ] Full middleware stack applied in correct order (see Middleware Stack section)
-- [ ] Health/readiness/version/metrics endpoints excluded from auth middleware
-- [ ] Swagger UI served at `/api/docs`
-- [ ] OpenAPI spec served at `/api/openapi.yaml`
+- [ ] Endpoints match `api/openapi.yaml` (methods, paths, status codes, response shapes)
+- [ ] Responses use envelope pattern, errors follow RFC 9457
+- [ ] `ETag` on single-resource GETs, `Location` on POST 201
+- [ ] Pagination with `limit`/`offset`, unknown fields rejected
 
 #### Database
-- [ ] Migrations have both `.up.sql` and `.down.sql`
-- [ ] Schema name matches service convention (`smd`, `bss`, `cloudinit`, `auth`, `discovery`)
-- [ ] All tables have `created_at` and `updated_at` TIMESTAMPTZ columns
-- [ ] `search_path` set to service schema on connection
-- [ ] Squirrel used for query building (dollar placeholders)
-- [ ] `QueryRowContext`/`QueryContext`/`ExecContext` used (not non-context variants)
+- [ ] Migrations: both `.up.sql` and `.down.sql`, correct schema name
+- [ ] Tables have `created_at`/`updated_at` TIMESTAMPTZ, `search_path` set
+- [ ] Squirrel queries with dollar placeholders, `*Context` methods
 
 #### Security
-- [ ] JWT validation middleware applied to all API routes
-- [ ] Scope enforcement on routes that modify data
-- [ ] Dev mode bypasses auth only when `CHAMICORE_<SERVICE>_DEV_MODE=true`
-- [ ] No secrets logged or returned in responses
-- [ ] SQL injection impossible (parameterized queries via squirrel)
+- [ ] JWT middleware on all API routes, scope enforcement on mutations
+- [ ] Dev mode only when `DEV_MODE=true`, no secrets in logs/responses
+- [ ] SQL injection impossible (parameterized queries)
 
-### Naming Conventions Quick Reference
+### Naming Conventions
 
 | What | Convention | Example |
 |------|-----------|---------|
-| Module path | `git.cscs.ch/openchami/chamicore-<service>` | `git.cscs.ch/openchami/chamicore-smd` |
-| Binary name | `chamicore-<service>` | `chamicore-smd` |
+| Module path | `git.cscs.ch/openchami/chamicore-<service>` | `chamicore-smd` |
 | Schema name | Short lowercase | `smd`, `bss`, `cloudinit`, `auth`, `discovery` |
 | Env var prefix | `CHAMICORE_<SERVICE>_` | `CHAMICORE_SMD_DB_DSN` |
-| API prefix | Service-specific | `/hsm/v2/`, `/boot/v1/`, `/auth/v1/`, `/discovery/v1/` |
-| Resource kind | PascalCase singular | `Component`, `BootParam`, `ScanJob`, `Target` |
-| Resource list kind | PascalCase + `List` | `ComponentList`, `BootParamList`, `ScanJobList` |
-| Table name | snake_case plural | `components`, `boot_params`, `scan_jobs`, `targets` |
-| Go package | Short lowercase | `server`, `store`, `model`, `config` |
-| Handler function | `handle<Verb><Resource>` | `handleGetComponent`, `handleCreateBootParam` |
-| Store method | `<Verb><Resource>` | `GetComponent`, `ListBootParams`, `CreateComponent` |
-| Client method | `<Verb><Resource>` | `GetComponent`, `ListBootParams`, `CreateComponent` |
+| API prefix | Service-specific | `/hsm/v2/`, `/boot/v1/`, `/auth/v1/` |
+| Resource kind | PascalCase singular/+`List` | `Component`, `ComponentList` |
+| Table name | snake_case plural | `components`, `boot_params` |
+| Handler function | `handle<Verb><Resource>` | `handleGetComponent` |
+| Store/Client method | `<Verb><Resource>` | `GetComponent`, `ListBootParams` |
 | Test function | `Test<Unit>_<Scenario>` | `TestGetComponent_NotFound` |
 | Error sentinel | `Err<Condition>` | `ErrNotFound`, `ErrConflict` |
-| Config field | PascalCase | `ListenAddr`, `DBDSN`, `LogLevel` |
-
-### Key Files Reference
-
-| File | Purpose | When to Read |
-|------|---------|-------------|
-| `AGENTS.md` | This file — all conventions | Always (first) |
-| `IMPLEMENTATION.md` | Task breakdown, dependencies, acceptance criteria | Before starting any task |
-| `templates/service/` | Reference implementation patterns | When writing any Go code |
-| `templates/README.md` | How to use templates | When starting a new service |
-| `ARCHITECTURE/ADR-*.md` | Design decisions and rationale | When you need to understand "why" |
-| `ARCHITECTURE/README.md` | Index of all ADRs | To find the right ADR |
-| Service `api/openapi.yaml` | API contract (source of truth) | When implementing handlers or clients |
-| Service `migrations/postgres/` | Database schema | When implementing store layer |
