@@ -1470,7 +1470,7 @@ Composite commands that orchestrate multiple services in sequence.
 
 ## Phase 5: UI and Deployment
 
-### P5.1: Docker Compose dev stack [ ]
+### P5.1: Docker Compose dev stack [x]
 
 **Depends on:** P1.1 (auth exists), P2.1 (SMD exists)
 **Repo:** chamicore-deploy
@@ -1492,12 +1492,12 @@ PostgreSQL auto-creates the `chamicore` database with per-service schemas via
 init scripts.
 
 **Done when:**
-- [ ] `docker compose up` starts PostgreSQL + all available Chamicore services
-- [ ] Services connect to shared PostgreSQL, each with its own schema
-- [ ] Dev mode enabled by default (no auth required for development)
-- [ ] Prometheus scrapes all `/metrics` endpoints
-- [ ] `make compose-up` and `make compose-down` work from the monorepo root
-- [ ] `.env.example` documents all configurable variables
+- [x] `docker compose up` starts PostgreSQL + all available Chamicore services
+- [x] Services connect to shared PostgreSQL, each with its own schema
+- [x] Dev mode enabled by default (no auth required for development)
+- [x] Prometheus scrapes all `/metrics` endpoints
+- [x] `make compose-up` and `make compose-down` work from the monorepo root
+- [x] `.env.example` documents all configurable variables
 
 ### P5.2: Helm charts [ ]
 
@@ -1888,7 +1888,7 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 2: SMD | P2.1 — P2.5 | 5/5 | Complete |
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
-| Phase 5: UI + Deploy | P5.1 — P5.4 | 0/4 | Not started |
+| Phase 5: UI + Deploy | P5.1 — P5.4 | 1/4 | In progress |
 | Phase 6: Quality | P6.1 — P6.4 | 0/4 | Not started |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
 | **Total** | | **20/47** | |
