@@ -759,7 +759,7 @@ Methods: `ExchangeToken`, `RefreshToken`, `RevokeToken`, `GetJWKS`,
 SMD is the central inventory service. BSS, Cloud-Init, Discovery, and Kea-Sync
 all depend on it. Reference: [ADR-010](ARCHITECTURE/ADR-010-component-identifiers.md).
 
-### P2.1: SMD scaffold and component CRUD [ ]
+### P2.1: SMD scaffold and component CRUD [x]
 
 **Depends on:** P0.1 through P0.8, P1.1 (JWKS endpoint must exist for JWT validation)
 **Repo:** chamicore-smd
@@ -820,7 +820,7 @@ Filter query parameters: `?type=Node`, `?state=Ready`, `?role=Compute`, `?rack=R
 - [ ] 100% test coverage
 - [ ] `golangci-lint run` passes
 
-### P2.2: network interfaces [ ]
+### P2.2: network interfaces [x]
 
 **Depends on:** P2.1
 **Repo:** chamicore-smd
@@ -870,7 +870,7 @@ MAC uniqueness is enforced at the DB level. Duplicate MAC returns `409 Conflict`
 - [ ] Creating a component with embedded interfaces works (transaction)
 - [ ] 100% test coverage
 
-### P2.3: groups and partitions [ ]
+### P2.3: groups and partitions [x]
 
 **Depends on:** P2.1
 **Repo:** chamicore-smd
@@ -918,7 +918,7 @@ Endpoints:
 - [ ] Deleting a component cascades to remove it from all groups
 - [ ] 100% test coverage
 
-### P2.4: sync endpoints for downstream services [ ]
+### P2.4: sync endpoints for downstream services [x]
 
 **Depends on:** P2.1, P2.2
 **Repo:** chamicore-smd
@@ -947,7 +947,7 @@ This is not a new endpoint — it enhances the existing list endpoint.
 - [ ] Sync consumers (BSS, Cloud-Init) can efficiently poll without transferring unchanged data
 - [ ] 100% test coverage
 
-### P2.5: SMD client SDK [ ]
+### P2.5: SMD client SDK [x]
 
 **Depends on:** P2.1, P2.2, P2.3, P0.3
 **Repo:** chamicore-smd
@@ -1885,10 +1885,10 @@ operate correctly without it (events are optional; sync falls back to polling).
 |-------|-------|----------|--------|
 | Phase 0: Foundation | P0.1 — P0.9 | 9/9 | Complete |
 | Phase 1: Auth | P1.1 — P1.6 | 6/6 | Complete |
-| Phase 2: SMD | P2.1 — P2.5 | 0/5 | Not started |
+| Phase 2: SMD | P2.1 — P2.5 | 5/5 | Complete |
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 0/4 | Not started |
 | Phase 6: Quality | P6.1 — P6.4 | 0/4 | Not started |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **15/47** | |
+| **Total** | | **20/47** | |
