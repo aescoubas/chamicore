@@ -2,14 +2,13 @@
 // Copy this file and replace all __PLACEHOLDER__ markers with your service values.
 //
 // Every handler follows these conventions:
-//   - Uses RFC 9457 Problem Details for errors (chamihttp.RespondProblem).
+//   - Uses RFC 9457 Problem Details for errors (httputil.RespondProblem).
 //   - Returns resources in the envelope pattern (kind, apiVersion, metadata, spec).
 //   - Passes context to the store for tracing and cancellation.
 //   - Logs structured fields with zerolog.
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,7 +24,8 @@ import (
 	"git.cscs.ch/openchami/__SERVICE_FULL__/internal/store"
 	"git.cscs.ch/openchami/__SERVICE_FULL__/pkg/types"
 
-	chamihttp "git.cscs.ch/openchami/chamicore-lib/pkg/http"
+	// Shared library packages.
+	"git.cscs.ch/openchami/chamicore-lib/httputil"
 )
 
 // ---------------------------------------------------------------------------
@@ -61,8 +61,7 @@ func (s *Server) handleList__RESOURCE__s(w http.ResponseWriter, r *http.Request)
 	// Parse pagination parameters.
 	limit, offset, err := parsePagination(r)
 	if err != nil {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			err.Error(), r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -77,29 +76,37 @@ func (s *Server) handleList__RESOURCE__s(w http.ResponseWriter, r *http.Request)
 	})
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to list __RESOURCE_LOWER__s")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	// Map internal models to public types.
-	specs := make([]types.__RESOURCE__, len(items))
+	// Map internal models to envelope items.
+	envelopeItems := make([]httputil.Resource[types.__RESOURCE__], len(items))
 	for i, item := range items {
-		specs[i] = toPublic__RESOURCE__(item)
+		envelopeItems[i] = httputil.Resource[types.__RESOURCE__]{
+			Kind:       resourceKind,
+			APIVersion: resourceAPIVersion,
+			Metadata: httputil.Metadata{
+				ID:        item.ID,
+				CreatedAt: item.CreatedAt,
+				UpdatedAt: item.UpdatedAt,
+			},
+			Spec: toPublic__RESOURCE__(item),
+		}
 	}
 
-	resp := types.ResourceList[types.__RESOURCE__]{
+	resp := httputil.ResourceList[types.__RESOURCE__]{
 		Kind:       resourceListKind,
 		APIVersion: resourceAPIVersion,
-		Metadata: types.ListMetadata{
-			TotalCount: total,
-			Limit:      limit,
-			Offset:     offset,
+		Metadata: httputil.ListMetadata{
+			Total:  total,
+			Limit:  limit,
+			Offset: offset,
 		},
-		Items: specs,
+		Items: envelopeItems,
 	}
 
-	chamihttp.RespondJSON(w, http.StatusOK, resp)
+	httputil.RespondJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -116,36 +123,34 @@ func (s *Server) handleGet__RESOURCE__(w http.ResponseWriter, r *http.Request) {
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			"missing resource id in URL path", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, "missing resource id in URL path")
 		return
 	}
 
 	item, err := s.store.Get__RESOURCE__(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			chamihttp.RespondProblem(w, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("__RESOURCE_LOWER__ %q not found", id), r.URL.Path)
+			httputil.RespondProblemf(w, r, http.StatusNotFound, "__RESOURCE_LOWER__ %q not found", id)
 			return
 		}
 		logger.Error().Err(err).Str("id", id).Msg("failed to get __RESOURCE_LOWER__")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	resp := types.Resource[types.__RESOURCE__]{
+	resp := httputil.Resource[types.__RESOURCE__]{
 		Kind:       resourceKind,
 		APIVersion: resourceAPIVersion,
-		Metadata: types.ResourceMetadata{
+		Metadata: httputil.Metadata{
 			ID:        item.ID,
+			ETag:      computeETag(item.ID, item.UpdatedAt),
 			CreatedAt: item.CreatedAt,
 			UpdatedAt: item.UpdatedAt,
 		},
 		Spec: toPublic__RESOURCE__(item),
 	}
 
-	// Compute and set ETag from UpdatedAt timestamp.
+	// Set ETag header for conditional request support.
 	etag := computeETag(item.ID, item.UpdatedAt)
 	w.Header().Set("ETag", etag)
 
@@ -157,7 +162,7 @@ func (s *Server) handleGet__RESOURCE__(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	chamihttp.RespondJSON(w, http.StatusOK, resp)
+	httputil.RespondJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -175,18 +180,14 @@ func (s *Server) handleCreate__RESOURCE__(w http.ResponseWriter, r *http.Request
 
 	// Decode request body with strict unknown field checking.
 	var req types.Create__RESOURCE__Request
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			fmt.Sprintf("invalid request body: %v", err), r.URL.Path)
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondProblemf(w, r, http.StatusBadRequest, "invalid request body: %v", err)
 		return
 	}
 
 	// Validate the request.
-	if problems := validateCreate__RESOURCE__Request(req); len(problems) > 0 {
-		chamihttp.RespondValidationProblem(w, http.StatusBadRequest, "Validation Failed",
-			"one or more fields failed validation", r.URL.Path, problems)
+	if errs := validateCreate__RESOURCE__Request(req); len(errs) > 0 {
+		httputil.RespondValidationProblem(w, r, errs)
 		return
 	}
 
@@ -200,21 +201,21 @@ func (s *Server) handleCreate__RESOURCE__(w http.ResponseWriter, r *http.Request
 	created, err := s.store.Create__RESOURCE__(ctx, m)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
-			chamihttp.RespondProblem(w, http.StatusConflict, "Conflict",
-				"a __RESOURCE_LOWER__ with this identifier already exists", r.URL.Path)
+			httputil.RespondProblem(w, r, http.StatusConflict,
+				"a __RESOURCE_LOWER__ with this identifier already exists")
 			return
 		}
 		logger.Error().Err(err).Msg("failed to create __RESOURCE_LOWER__")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	resp := types.Resource[types.__RESOURCE__]{
+	resp := httputil.Resource[types.__RESOURCE__]{
 		Kind:       resourceKind,
 		APIVersion: resourceAPIVersion,
-		Metadata: types.ResourceMetadata{
+		Metadata: httputil.Metadata{
 			ID:        created.ID,
+			ETag:      computeETag(created.ID, created.UpdatedAt),
 			CreatedAt: created.CreatedAt,
 			UpdatedAt: created.UpdatedAt,
 		},
@@ -225,7 +226,7 @@ func (s *Server) handleCreate__RESOURCE__(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Location", location)
 	w.Header().Set("ETag", computeETag(created.ID, created.UpdatedAt))
 
-	chamihttp.RespondJSON(w, http.StatusCreated, resp)
+	httputil.RespondJSON(w, http.StatusCreated, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -243,16 +244,15 @@ func (s *Server) handleUpdate__RESOURCE__(w http.ResponseWriter, r *http.Request
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			"missing resource id in URL path", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, "missing resource id in URL path")
 		return
 	}
 
 	// Require If-Match for optimistic concurrency control.
 	ifMatch := r.Header.Get("If-Match")
 	if ifMatch == "" {
-		chamihttp.RespondProblem(w, http.StatusPreconditionRequired, "Precondition Required",
-			"If-Match header with ETag is required for PUT operations", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusPreconditionRequired,
+			"If-Match header with ETag is required for PUT operations")
 		return
 	}
 
@@ -260,39 +260,32 @@ func (s *Server) handleUpdate__RESOURCE__(w http.ResponseWriter, r *http.Request
 	current, err := s.store.Get__RESOURCE__(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			chamihttp.RespondProblem(w, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("__RESOURCE_LOWER__ %q not found", id), r.URL.Path)
+			httputil.RespondProblemf(w, r, http.StatusNotFound, "__RESOURCE_LOWER__ %q not found", id)
 			return
 		}
 		logger.Error().Err(err).Str("id", id).Msg("failed to get __RESOURCE_LOWER__ for update")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
 	// Check ETag.
 	currentETag := computeETag(current.ID, current.UpdatedAt)
 	if strings.TrimSpace(ifMatch) != currentETag {
-		chamihttp.RespondProblem(w, http.StatusPreconditionFailed, "Precondition Failed",
-			"the resource has been modified since you last retrieved it; re-fetch and retry",
-			r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusPreconditionFailed,
+			"the resource has been modified since you last retrieved it; re-fetch and retry")
 		return
 	}
 
 	// Decode request body.
 	var req types.Update__RESOURCE__Request
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			fmt.Sprintf("invalid request body: %v", err), r.URL.Path)
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondProblemf(w, r, http.StatusBadRequest, "invalid request body: %v", err)
 		return
 	}
 
 	// Validate.
-	if problems := validateUpdate__RESOURCE__Request(req); len(problems) > 0 {
-		chamihttp.RespondValidationProblem(w, http.StatusBadRequest, "Validation Failed",
-			"one or more fields failed validation", r.URL.Path, problems)
+	if errs := validateUpdate__RESOURCE__Request(req); len(errs) > 0 {
+		httputil.RespondValidationProblem(w, r, errs)
 		return
 	}
 
@@ -307,21 +300,20 @@ func (s *Server) handleUpdate__RESOURCE__(w http.ResponseWriter, r *http.Request
 	updated, err := s.store.Update__RESOURCE__(ctx, m)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			chamihttp.RespondProblem(w, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("__RESOURCE_LOWER__ %q not found", id), r.URL.Path)
+			httputil.RespondProblemf(w, r, http.StatusNotFound, "__RESOURCE_LOWER__ %q not found", id)
 			return
 		}
 		logger.Error().Err(err).Str("id", id).Msg("failed to update __RESOURCE_LOWER__")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	resp := types.Resource[types.__RESOURCE__]{
+	resp := httputil.Resource[types.__RESOURCE__]{
 		Kind:       resourceKind,
 		APIVersion: resourceAPIVersion,
-		Metadata: types.ResourceMetadata{
+		Metadata: httputil.Metadata{
 			ID:        updated.ID,
+			ETag:      computeETag(updated.ID, updated.UpdatedAt),
 			CreatedAt: updated.CreatedAt,
 			UpdatedAt: updated.UpdatedAt,
 		},
@@ -329,7 +321,7 @@ func (s *Server) handleUpdate__RESOURCE__(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("ETag", computeETag(updated.ID, updated.UpdatedAt))
-	chamihttp.RespondJSON(w, http.StatusOK, resp)
+	httputil.RespondJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -350,18 +342,14 @@ func (s *Server) handlePatch__RESOURCE__(w http.ResponseWriter, r *http.Request)
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			"missing resource id in URL path", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, "missing resource id in URL path")
 		return
 	}
 
 	// Decode patch request (uses pointer fields for optionality).
 	var req types.Patch__RESOURCE__Request
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			fmt.Sprintf("invalid request body: %v", err), r.URL.Path)
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondProblemf(w, r, http.StatusBadRequest, "invalid request body: %v", err)
 		return
 	}
 
@@ -369,13 +357,11 @@ func (s *Server) handlePatch__RESOURCE__(w http.ResponseWriter, r *http.Request)
 	existing, err := s.store.Get__RESOURCE__(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			chamihttp.RespondProblem(w, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("__RESOURCE_LOWER__ %q not found", id), r.URL.Path)
+			httputil.RespondProblemf(w, r, http.StatusNotFound, "__RESOURCE_LOWER__ %q not found", id)
 			return
 		}
 		logger.Error().Err(err).Str("id", id).Msg("failed to get __RESOURCE_LOWER__ for patch")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
@@ -391,16 +377,16 @@ func (s *Server) handlePatch__RESOURCE__(w http.ResponseWriter, r *http.Request)
 	updated, err := s.store.Update__RESOURCE__(ctx, existing)
 	if err != nil {
 		logger.Error().Err(err).Str("id", id).Msg("failed to patch __RESOURCE_LOWER__")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	resp := types.Resource[types.__RESOURCE__]{
+	resp := httputil.Resource[types.__RESOURCE__]{
 		Kind:       resourceKind,
 		APIVersion: resourceAPIVersion,
-		Metadata: types.ResourceMetadata{
+		Metadata: httputil.Metadata{
 			ID:        updated.ID,
+			ETag:      computeETag(updated.ID, updated.UpdatedAt),
 			CreatedAt: updated.CreatedAt,
 			UpdatedAt: updated.UpdatedAt,
 		},
@@ -408,7 +394,7 @@ func (s *Server) handlePatch__RESOURCE__(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("ETag", computeETag(updated.ID, updated.UpdatedAt))
-	chamihttp.RespondJSON(w, http.StatusOK, resp)
+	httputil.RespondJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------
@@ -425,24 +411,21 @@ func (s *Server) handleDelete__RESOURCE__(w http.ResponseWriter, r *http.Request
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		chamihttp.RespondProblem(w, http.StatusBadRequest, "Bad Request",
-			"missing resource id in URL path", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, "missing resource id in URL path")
 		return
 	}
 
 	if err := s.store.Delete__RESOURCE__(ctx, id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			chamihttp.RespondProblem(w, http.StatusNotFound, "Not Found",
-				fmt.Sprintf("__RESOURCE_LOWER__ %q not found", id), r.URL.Path)
+			httputil.RespondProblemf(w, r, http.StatusNotFound, "__RESOURCE_LOWER__ %q not found", id)
 			return
 		}
 		logger.Error().Err(err).Str("id", id).Msg("failed to delete __RESOURCE_LOWER__")
-		chamihttp.RespondProblem(w, http.StatusInternalServerError, "Internal Server Error",
-			"an unexpected error occurred", r.URL.Path)
+		httputil.RespondProblem(w, r, http.StatusInternalServerError, "an unexpected error occurred")
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	httputil.RespondNoContent(w)
 }
 
 // ---------------------------------------------------------------------------
@@ -450,35 +433,28 @@ func (s *Server) handleDelete__RESOURCE__(w http.ResponseWriter, r *http.Request
 // ---------------------------------------------------------------------------
 
 // TEMPLATE: validateCreate__RESOURCE__Request validates the creation request
-// and returns a list of field-level problems. Return nil if valid.
-func validateCreate__RESOURCE__Request(req types.Create__RESOURCE__Request) []chamihttp.ValidationProblem {
-	var problems []chamihttp.ValidationProblem
+// and returns a list of field-level errors. Return nil if valid.
+func validateCreate__RESOURCE__Request(req types.Create__RESOURCE__Request) []httputil.ValidationError {
+	var errs []httputil.ValidationError
 
 	if strings.TrimSpace(req.Name) == "" {
-		problems = append(problems, chamihttp.ValidationProblem{
+		errs = append(errs, httputil.ValidationError{
 			Field:   "name",
 			Message: "name is required and must not be blank",
 		})
 	}
 
 	// TEMPLATE: Add additional field validations.
-	// Example:
-	// if req.Name != "" && len(req.Name) > 255 {
-	//     problems = append(problems, chamihttp.ValidationProblem{
-	//         Field:   "name",
-	//         Message: "name must be 255 characters or fewer",
-	//     })
-	// }
 
-	return problems
+	return errs
 }
 
 // TEMPLATE: validateUpdate__RESOURCE__Request validates the full update request.
-func validateUpdate__RESOURCE__Request(req types.Update__RESOURCE__Request) []chamihttp.ValidationProblem {
-	var problems []chamihttp.ValidationProblem
+func validateUpdate__RESOURCE__Request(req types.Update__RESOURCE__Request) []httputil.ValidationError {
+	var errs []httputil.ValidationError
 
 	if strings.TrimSpace(req.Name) == "" {
-		problems = append(problems, chamihttp.ValidationProblem{
+		errs = append(errs, httputil.ValidationError{
 			Field:   "name",
 			Message: "name is required and must not be blank",
 		})
@@ -486,7 +462,7 @@ func validateUpdate__RESOURCE__Request(req types.Update__RESOURCE__Request) []ch
 
 	// TEMPLATE: Add additional field validations.
 
-	return problems
+	return errs
 }
 
 // ---------------------------------------------------------------------------

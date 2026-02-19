@@ -6,74 +6,13 @@
 // remain backward-compatible across minor versions.
 //
 // Conventions:
-//   - Resource envelope: every response wraps the payload in a standard
-//     envelope with kind, apiVersion, metadata, and spec fields.
+//   - Resource envelope types (Resource, ResourceList, Metadata, ListMetadata)
+//     come from chamicore-lib/httputil — do NOT redefine them here.
 //   - Request types use value fields for required data and pointer fields
 //     for optional/patchable data.
 //   - JSON tags use camelCase to match the OpenAPI schema.
 //   - Validation is NOT performed in this package; handlers validate inputs.
 package types
-
-import "time"
-
-// ===========================================================================
-// Resource Envelope — standard wrapper for all API responses.
-// ===========================================================================
-
-// Resource is the standard envelope for a single API resource.
-// The type parameter T is the spec type (e.g., __RESOURCE__).
-type Resource[T any] struct {
-	// Kind identifies the resource type (e.g., "__RESOURCE__").
-	Kind string `json:"kind"`
-
-	// APIVersion identifies the API version (e.g., "__API_VERSION__").
-	APIVersion string `json:"apiVersion"`
-
-	// Metadata contains resource identity and audit fields.
-	Metadata ResourceMetadata `json:"metadata"`
-
-	// Spec contains the resource-specific payload.
-	Spec T `json:"spec"`
-}
-
-// ResourceMetadata carries identity and audit fields common to all resources.
-type ResourceMetadata struct {
-	// ID is the unique resource identifier (UUID).
-	ID string `json:"id"`
-
-	// CreatedAt is the timestamp when the resource was created.
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is the timestamp of the last modification.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// ResourceList is the standard envelope for a collection of API resources.
-type ResourceList[T any] struct {
-	// Kind identifies the list type (e.g., "__RESOURCE__List").
-	Kind string `json:"kind"`
-
-	// APIVersion identifies the API version.
-	APIVersion string `json:"apiVersion"`
-
-	// Metadata contains pagination information.
-	Metadata ListMetadata `json:"metadata"`
-
-	// Items is the slice of resources in this page.
-	Items []T `json:"items"`
-}
-
-// ListMetadata carries pagination information for list responses.
-type ListMetadata struct {
-	// TotalCount is the total number of matching resources (across all pages).
-	TotalCount int `json:"totalCount"`
-
-	// Limit is the maximum number of items in this page.
-	Limit int `json:"limit"`
-
-	// Offset is the number of items skipped before this page.
-	Offset int `json:"offset"`
-}
 
 // ===========================================================================
 // __RESOURCE__ — the primary resource type.
@@ -149,41 +88,4 @@ type Patch__RESOURCE__Request struct {
 
 	// TEMPLATE: Add all patchable fields as pointers.
 	// Type *string `json:"type,omitempty"`
-}
-
-// ===========================================================================
-// RFC 9457 Problem Details — standard error response type.
-// ===========================================================================
-
-// ProblemDetail represents an RFC 9457 Problem Details response.
-// This type is defined here for client-side error parsing. The server
-// constructs these via chamicore-lib helpers (chamihttp.RespondProblem).
-type ProblemDetail struct {
-	// Type is a URI reference identifying the problem type.
-	// Default: "about:blank"
-	Type string `json:"type"`
-
-	// Title is a short, human-readable summary.
-	Title string `json:"title"`
-
-	// Status is the HTTP status code.
-	Status int `json:"status"`
-
-	// Detail is a human-readable explanation specific to this occurrence.
-	Detail string `json:"detail,omitempty"`
-
-	// Instance is a URI reference identifying the specific occurrence.
-	Instance string `json:"instance,omitempty"`
-
-	// Errors is an optional list of field-level validation errors.
-	Errors []ValidationError `json:"errors,omitempty"`
-}
-
-// ValidationError represents a single field-level validation failure.
-type ValidationError struct {
-	// Field is the JSON field path (e.g., "name", "spec.type").
-	Field string `json:"field"`
-
-	// Message describes what is wrong with the field value.
-	Message string `json:"message"`
 }

@@ -38,6 +38,12 @@ type Config struct {
 	// Default: ""
 	JWKSUrl string
 
+	// InternalToken is the pre-shared secret for service-to-service auth.
+	// All Chamicore services in the same deployment share this value.
+	// Env: CHAMICORE_INTERNAL_TOKEN
+	// Default: ""
+	InternalToken string
+
 	// MetricsEnabled controls whether Prometheus metrics are exposed.
 	// Env: CHAMICORE___SERVICE_UPPER___METRICS_ENABLED
 	// Default: true
@@ -68,6 +74,7 @@ func Load() (Config, error) {
 		LogLevel:       strings.ToLower(envOrDefault("CHAMICORE___SERVICE_UPPER___LOG_LEVEL", "info")),
 		DevMode:        envBool("CHAMICORE___SERVICE_UPPER___DEV_MODE", false),
 		JWKSUrl:        envOrDefault("CHAMICORE___SERVICE_UPPER___JWKS_URL", ""),
+		InternalToken:  envOrDefault("CHAMICORE_INTERNAL_TOKEN", ""),
 		MetricsEnabled: envBool("CHAMICORE___SERVICE_UPPER___METRICS_ENABLED", true),
 		TracesEnabled:  envBool("CHAMICORE___SERVICE_UPPER___TRACES_ENABLED", false),
 		PrometheusAddr: envOrDefault("CHAMICORE___SERVICE_UPPER___PROMETHEUS_ADDR", ":9090"),

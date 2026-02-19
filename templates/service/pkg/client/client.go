@@ -17,7 +17,6 @@ package client
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -25,7 +24,9 @@ import (
 	// TEMPLATE: Update this import to match your service module path.
 	"git.cscs.ch/openchami/__SERVICE_FULL__/pkg/types"
 
-	chamihttp "git.cscs.ch/openchami/chamicore-lib/pkg/http"
+	// Shared library packages.
+	"git.cscs.ch/openchami/chamicore-lib/httputil"
+	baseclient "git.cscs.ch/openchami/chamicore-lib/httputil/client"
 )
 
 // ---------------------------------------------------------------------------
@@ -48,9 +49,6 @@ type Config struct {
 	// MaxRetries is the number of automatic retries for transient errors
 	// (5xx, connection reset). Defaults to 3.
 	MaxRetries int
-
-	// HTTPClient is an optional custom http.Client. If nil, a default is used.
-	HTTPClient *http.Client
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +58,7 @@ type Config struct {
 // Client is the typed HTTP SDK for the __SERVICE__ service.
 type Client struct {
 	cfg    Config
-	client *chamihttp.Client
+	client *baseclient.Client
 }
 
 // New creates a new Client with the given configuration.
@@ -81,12 +79,11 @@ func New(cfg Config) (*Client, error) {
 	//   - OpenTelemetry trace context propagation
 	//   - Retry with exponential backoff
 	//   - RFC 9457 error parsing
-	httpClient := chamihttp.NewClient(chamihttp.ClientConfig{
+	httpClient := baseclient.New(baseclient.Config{
 		BaseURL:    cfg.BaseURL,
 		Token:      cfg.Token,
 		Timeout:    cfg.Timeout,
 		MaxRetries: cfg.MaxRetries,
-		HTTPClient: cfg.HTTPClient,
 	})
 
 	return &Client{
@@ -110,7 +107,7 @@ type ListOptions struct {
 }
 
 // List retrieves a paginated list of __RESOURCE_LOWER__ resources.
-func (c *Client) List(ctx context.Context, opts ListOptions) (*types.ResourceList[types.__RESOURCE__], error) {
+func (c *Client) List(ctx context.Context, opts ListOptions) (*httputil.ResourceList[types.__RESOURCE__], error) {
 	params := url.Values{}
 	if opts.Limit > 0 {
 		params.Set("limit", strconv.Itoa(opts.Limit))
@@ -128,7 +125,7 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (*types.ResourceLis
 		path += "?" + params.Encode()
 	}
 
-	var result types.ResourceList[types.__RESOURCE__]
+	var result httputil.ResourceList[types.__RESOURCE__]
 	if err := c.client.Get(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("listing __RESOURCE_PLURAL__: %w", err)
 	}
@@ -141,10 +138,10 @@ func (c *Client) List(ctx context.Context, opts ListOptions) (*types.ResourceLis
 // ---------------------------------------------------------------------------
 
 // Get retrieves a single __RESOURCE_LOWER__ by ID.
-func (c *Client) Get(ctx context.Context, id string) (*types.Resource[types.__RESOURCE__], error) {
+func (c *Client) Get(ctx context.Context, id string) (*httputil.Resource[types.__RESOURCE__], error) {
 	path := fmt.Sprintf("__API_PREFIX__/__RESOURCE_PLURAL__/%s", url.PathEscape(id))
 
-	var result types.Resource[types.__RESOURCE__]
+	var result httputil.Resource[types.__RESOURCE__]
 	if err := c.client.Get(ctx, path, &result); err != nil {
 		return nil, fmt.Errorf("getting __RESOURCE_LOWER__ %q: %w", id, err)
 	}
@@ -157,10 +154,10 @@ func (c *Client) Get(ctx context.Context, id string) (*types.Resource[types.__RE
 // ---------------------------------------------------------------------------
 
 // Create creates a new __RESOURCE_LOWER__.
-func (c *Client) Create(ctx context.Context, req types.Create__RESOURCE__Request) (*types.Resource[types.__RESOURCE__], error) {
+func (c *Client) Create(ctx context.Context, req types.Create__RESOURCE__Request) (*httputil.Resource[types.__RESOURCE__], error) {
 	path := "__API_PREFIX__/__RESOURCE_PLURAL__"
 
-	var result types.Resource[types.__RESOURCE__]
+	var result httputil.Resource[types.__RESOURCE__]
 	if err := c.client.Post(ctx, path, req, &result); err != nil {
 		return nil, fmt.Errorf("creating __RESOURCE_LOWER__: %w", err)
 	}
@@ -175,14 +172,14 @@ func (c *Client) Create(ctx context.Context, req types.Create__RESOURCE__Request
 // Update performs a full replacement of an existing __RESOURCE_LOWER__.
 // The etag parameter must be the current ETag of the resource (from a prior
 // Get call) and is sent as the If-Match header.
-func (c *Client) Update(ctx context.Context, id string, etag string, req types.Update__RESOURCE__Request) (*types.Resource[types.__RESOURCE__], error) {
+func (c *Client) Update(ctx context.Context, id string, etag string, req types.Update__RESOURCE__Request) (*httputil.Resource[types.__RESOURCE__], error) {
 	path := fmt.Sprintf("__API_PREFIX__/__RESOURCE_PLURAL__/%s", url.PathEscape(id))
 
 	headers := map[string]string{
 		"If-Match": etag,
 	}
 
-	var result types.Resource[types.__RESOURCE__]
+	var result httputil.Resource[types.__RESOURCE__]
 	if err := c.client.PutWithHeaders(ctx, path, req, &result, headers); err != nil {
 		return nil, fmt.Errorf("updating __RESOURCE_LOWER__ %q: %w", id, err)
 	}
@@ -195,10 +192,10 @@ func (c *Client) Update(ctx context.Context, id string, etag string, req types.U
 // ---------------------------------------------------------------------------
 
 // Patch performs a partial update of an existing __RESOURCE_LOWER__.
-func (c *Client) Patch(ctx context.Context, id string, req types.Patch__RESOURCE__Request) (*types.Resource[types.__RESOURCE__], error) {
+func (c *Client) Patch(ctx context.Context, id string, req types.Patch__RESOURCE__Request) (*httputil.Resource[types.__RESOURCE__], error) {
 	path := fmt.Sprintf("__API_PREFIX__/__RESOURCE_PLURAL__/%s", url.PathEscape(id))
 
-	var result types.Resource[types.__RESOURCE__]
+	var result httputil.Resource[types.__RESOURCE__]
 	if err := c.client.Patch(ctx, path, req, &result); err != nil {
 		return nil, fmt.Errorf("patching __RESOURCE_LOWER__ %q: %w", id, err)
 	}

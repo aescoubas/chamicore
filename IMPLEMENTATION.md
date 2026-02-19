@@ -253,7 +253,7 @@ additional resource handlers are added manually following the same patterns.
 Everything depends on the shared library. Build it first with comprehensive tests.
 chamicore-lib is a pure Go library with no `main` package — it produces no binary.
 
-### P0.1: httputil — envelope types and response helpers [ ]
+### P0.1: httputil — envelope types and response helpers [x]
 
 **Depends on:** none
 **Repo:** chamicore-lib
@@ -288,7 +288,7 @@ ProblemDetail with field-level validation errors.
 - [ ] 100% test coverage
 - [ ] `golangci-lint run` passes
 
-### P0.2: httputil — middleware stack [ ]
+### P0.2: httputil — middleware stack [x]
 
 **Depends on:** P0.1
 **Repo:** chamicore-lib
@@ -330,7 +330,7 @@ Note: `OTelMetrics` and `OTelTracing` middleware are in the `otel` package (P0.7
 - [ ] 100% test coverage
 - [ ] `golangci-lint run` passes
 
-### P0.3: httputil/client — base HTTP client [ ]
+### P0.3: httputil/client — base HTTP client [x]
 
 **Depends on:** P0.1
 **Repo:** chamicore-lib
@@ -359,7 +359,7 @@ Base HTTP client used by all service `pkg/client/` SDKs. Features:
 - [ ] Context cancellation stops retries
 - [ ] 100% test coverage
 
-### P0.4: auth — JWT middleware and JWKS [ ]
+### P0.4: auth — JWT middleware and JWKS [x]
 
 **Depends on:** P0.1
 **Repo:** chamicore-lib
@@ -398,7 +398,7 @@ injects synthetic admin claims with all scopes. Logs a prominent warning.
 - [ ] All error responses are RFC 9457 ProblemDetail format
 - [ ] 100% test coverage (use httptest with pre-generated test JWTs)
 
-### P0.5: dbutil — PostgreSQL connection and migrations [ ]
+### P0.5: dbutil — PostgreSQL connection and migrations [x]
 
 **Depends on:** none
 **Repo:** chamicore-lib
@@ -425,7 +425,7 @@ the result. Returns the current version and whether the schema is dirty.
 - [ ] Integration test (build tag `integration`) uses testcontainers to verify against real PostgreSQL
 - [ ] 100% test coverage
 
-### P0.6: identity — component ID validation and enums [ ]
+### P0.6: identity — component ID validation and enums [x]
 
 **Depends on:** none
 **Repo:** chamicore-lib
@@ -460,7 +460,7 @@ Each enum type has a `Valid() bool` method and a `ParseX(s string) (X, error)` f
 - [ ] Enum string representations match the ADR-010 values exactly
 - [ ] 100% test coverage
 
-### P0.7: otel — OpenTelemetry instrumentation [ ]
+### P0.7: otel — OpenTelemetry instrumentation [x]
 
 **Depends on:** P0.1
 **Repo:** chamicore-lib
@@ -490,7 +490,7 @@ requests. `HTTPMetrics()` records request count, duration, and size histograms.
 - [ ] All features are no-ops when disabled (no panics, no overhead)
 - [ ] 100% test coverage (use noop exporters for unit tests)
 
-### P0.8: testutil — test helpers [ ]
+### P0.8: testutil — test helpers [x]
 
 **Depends on:** P0.5
 **Repo:** chamicore-lib
@@ -519,7 +519,7 @@ a `ProblemDetail`, and asserts the status code matches.
 - [ ] Integration test verifies the full lifecycle (container start, migrate, query, cleanup)
 - [ ] 100% test coverage
 
-### P0.9: update templates to use canonical import paths [ ]
+### P0.9: update templates to use canonical import paths [x]
 
 **Depends on:** P0.1, P0.2, P0.3, P0.4
 **Repo:** chamicore (monorepo, `templates/` directory)
