@@ -555,7 +555,7 @@ Also add the test template files described below.
 All other services depend on chamicore-auth for JWKS and JWT validation.
 Reference: [ADR-011](ARCHITECTURE/ADR-011-consolidated-auth-service.md).
 
-### P1.1: auth service scaffold and JWKS endpoint [ ]
+### P1.1: auth service scaffold and JWKS endpoint [x]
 
 **Depends on:** P0.1, P0.2, P0.4, P0.5, P0.7, P0.8
 **Repo:** chamicore-auth
@@ -591,7 +591,7 @@ as JWKS. This enables other services to validate tokens immediately.
 - [ ] 100% test coverage (unit + integration with testcontainers)
 - [ ] `golangci-lint run` passes
 
-### P1.2: token exchange and service accounts [ ]
+### P1.2: token exchange and service accounts [x]
 
 **Depends on:** P1.1
 **Repo:** chamicore-auth
@@ -630,7 +630,7 @@ Dev mode: when enabled, `POST /auth/v1/token` issues admin tokens without valida
 - [ ] Token lifetime is configurable via environment variable
 - [ ] 100% test coverage
 
-### P1.3: token revocation [ ]
+### P1.3: token revocation [x]
 
 **Depends on:** P1.2
 **Repo:** chamicore-auth
@@ -657,7 +657,7 @@ automatically cleaned up (background goroutine or on-query filter).
 - [ ] Expired revocations are excluded from responses
 - [ ] 100% test coverage
 
-### P1.4: Casbin policy engine [ ]
+### P1.4: Casbin policy engine [x]
 
 **Depends on:** P1.2
 **Repo:** chamicore-auth
@@ -691,7 +691,7 @@ Use `casbin/gorm-adapter/v3` for PostgreSQL storage of policies.
 - [ ] Default policies created on first startup (admin role with full access)
 - [ ] 100% test coverage
 
-### P1.5: device credential store [ ]
+### P1.5: device credential store [x]
 
 **Depends on:** P1.1
 **Repo:** chamicore-auth
@@ -725,7 +725,7 @@ Credentials include: `name`, `type` (e.g., `redfish`, `ipmi`), `username`, `secr
 - [ ] Tags stored as JSONB, queryable via `?tag=site:east`
 - [ ] 100% test coverage
 
-### P1.6: auth client SDK [ ]
+### P1.6: auth client SDK [x]
 
 **Depends on:** P1.1, P1.2, P0.3
 **Repo:** chamicore-auth
@@ -1883,12 +1883,12 @@ operate correctly without it (events are optional; sync falls back to polling).
 
 | Phase | Tasks | Complete | Status |
 |-------|-------|----------|--------|
-| Phase 0: Foundation | P0.1 — P0.9 | 0/9 | Not started |
-| Phase 1: Auth | P1.1 — P1.6 | 0/6 | Not started |
+| Phase 0: Foundation | P0.1 — P0.9 | 9/9 | Complete |
+| Phase 1: Auth | P1.1 — P1.6 | 6/6 | Complete |
 | Phase 2: SMD | P2.1 — P2.5 | 0/5 | Not started |
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 0/4 | Not started |
 | Phase 6: Quality | P6.1 — P6.4 | 0/4 | Not started |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **0/47** | |
+| **Total** | | **15/47** | |
