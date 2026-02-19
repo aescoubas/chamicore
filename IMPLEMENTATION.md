@@ -1499,7 +1499,7 @@ init scripts.
 - [x] `make compose-up` and `make compose-down` work from the monorepo root
 - [x] `.env.example` documents all configurable variables
 
-### P5.2: Helm charts [ ]
+### P5.2: Helm charts [x]
 
 **Depends on:** P5.1
 **Repo:** chamicore-deploy
@@ -1515,11 +1515,11 @@ Helm chart for production Kubernetes deployment. Single umbrella chart with
 per-service sub-charts or templates. See ADR-008.
 
 **Done when:**
-- [ ] `helm install chamicore ./charts/chamicore` deploys the full stack
-- [ ] Per-service resource limits, replica counts, and probes configured
-- [ ] Values file documents all overridable settings
-- [ ] `helm test chamicore` runs smoke tests
-- [ ] Ingress templates support configurable host/TLS
+- [x] `helm install chamicore ./charts/chamicore` deploys the full stack
+- [x] Per-service resource limits, replica counts, and probes configured
+- [x] Values file documents all overridable settings
+- [x] `helm test chamicore` runs smoke tests
+- [x] Ingress templates support configurable host/TLS
 
 ### P5.3: Web UI backend (Go BFF) [ ]
 
@@ -1888,7 +1888,7 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 2: SMD | P2.1 — P2.5 | 5/5 | Complete |
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
-| Phase 5: UI + Deploy | P5.1 — P5.4 | 1/4 | In progress |
+| Phase 5: UI + Deploy | P5.1 — P5.4 | 2/4 | In progress |
 | Phase 6: Quality | P6.1 — P6.4 | 0/4 | Not started |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **20/47** | |
+| **Total** | | **21/47** | |
