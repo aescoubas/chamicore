@@ -1521,7 +1521,7 @@ per-service sub-charts or templates. See ADR-008.
 - [x] `helm test chamicore` runs smoke tests
 - [x] Ingress templates support configurable host/TLS
 
-### P5.3: Web UI backend (Go BFF) [ ]
+### P5.3: Web UI backend (Go BFF) [~]
 
 **Depends on:** P1.6, P2.5, P3.7
 **Repo:** chamicore-ui
@@ -1541,10 +1541,10 @@ with chamicore-auth, maintains sessions, and proxies/aggregates API calls to
 microservices on behalf of the frontend.
 
 **Done when:**
-- [ ] Serves embedded Vue.js SPA on `/`
-- [ ] BFF API proxies requests to SMD, BSS, Cloud-Init, Auth
-- [ ] Session-based auth with secure HTTP-only cookies
-- [ ] OIDC login flow via chamicore-auth
+- [x] Serves embedded Vue.js SPA on `/`
+- [x] BFF API proxies requests to SMD, BSS, Cloud-Init, Auth
+- [x] Session-based auth with secure HTTP-only cookies
+- [x] OIDC login flow via chamicore-auth
 - [ ] 100% test coverage on Go backend
 
 ### P5.4: Web UI frontend (Vue.js) [ ]
