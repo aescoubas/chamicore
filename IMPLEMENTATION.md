@@ -1597,7 +1597,7 @@ Cross-service integration tests using Docker Compose. Written in Go using servic
 - [x] All tests use typed client SDKs
 - [x] Tests run against Docker Compose stack
 
-### P6.2: smoke tests [ ]
+### P6.2: smoke tests [x]
 
 **Depends on:** P5.1
 **Repo:** chamicore (monorepo `tests/smoke/` directory)
@@ -1610,9 +1610,9 @@ Cross-service integration tests using Docker Compose. Written in Go using servic
 Quick health verification tests. Build tag: `//go:build smoke`. Must complete in <30s.
 
 **Done when:**
-- [ ] Each service health endpoint returns 200
-- [ ] One create + read operation per service succeeds
-- [ ] Total runtime < 30 seconds
+- [x] Each service health endpoint returns 200
+- [x] One create + read operation per service succeeds
+- [x] Total runtime < 30 seconds
 
 ### P6.3: load tests [ ]
 
@@ -1889,6 +1889,6 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
-| Phase 6: Quality | P6.1 — P6.4 | 1/4 | In progress |
+| Phase 6: Quality | P6.1 — P6.4 | 2/4 | In progress |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **21/47** | |
+| **Total** | | **22/47** | |
