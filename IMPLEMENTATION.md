@@ -1711,7 +1711,7 @@ chamicore.auth.tokens.revoked
 - [x] 100% test coverage
 - [x] `golangci-lint run` passes
 
-### P7.2: NATS JetStream publisher/subscriber [ ]
+### P7.2: NATS JetStream publisher/subscriber [x]
 
 **Depends on:** P7.1
 **Repo:** chamicore-lib
@@ -1740,13 +1740,13 @@ Consumer configuration:
 - Max deliver: 5 (dead-letter after exhausting retries)
 
 **Done when:**
-- [ ] `nats.NewPublisher(cfg)` returns a `Publisher` backed by JetStream
-- [ ] `nats.NewSubscriber(cfg)` returns a `Subscriber` backed by JetStream durable consumers
-- [ ] `nats.EnsureStream(conn, streamCfg)` creates/updates streams idempotently
-- [ ] Automatic reconnection with backoff on NATS disconnect
-- [ ] Integration tests pass with NATS testcontainer
-- [ ] 100% test coverage on non-integration code
-- [ ] `golangci-lint run` passes
+- [x] `nats.NewPublisher(cfg)` returns a `Publisher` backed by JetStream
+- [x] `nats.NewSubscriber(cfg)` returns a `Subscriber` backed by JetStream durable consumers
+- [x] `nats.EnsureStream(conn, streamCfg)` creates/updates streams idempotently
+- [x] Automatic reconnection with backoff on NATS disconnect
+- [x] Integration tests pass with NATS testcontainer
+- [x] 100% test coverage on non-integration code
+- [x] `golangci-lint run` passes
 
 ### P7.3: transactional outbox pattern [ ]
 
@@ -1890,5 +1890,5 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
-| Phase 7: Events (NATS) | P7.1 — P7.6 | 1/6 | In progress |
-| **Total** | | **25/47** | |
+| Phase 7: Events (NATS) | P7.1 — P7.6 | 2/6 | In progress |
+| **Total** | | **26/47** | |
