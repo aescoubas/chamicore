@@ -1854,7 +1854,7 @@ every 5 minutes instead of every 30 seconds) as a consistency backstop.
 - [ ] 100% test coverage maintained
 - [ ] `golangci-lint run` passes
 
-### P7.6: NATS in deployment stack [ ]
+### P7.6: NATS in deployment stack [x]
 
 **Depends on:** P7.2, P5.1
 **Repo:** chamicore-deploy
@@ -1870,12 +1870,12 @@ Helm for production). All services receive the NATS URL via environment variable
 operate correctly without it (events are optional; sync falls back to polling).
 
 **Done when:**
-- [ ] `docker-compose.yml` includes NATS JetStream server
-- [ ] All services configured with `CHAMICORE_NATS_URL` environment variable
-- [ ] Helm values include NATS chart as optional dependency
-- [ ] `make compose-up` starts NATS alongside other services
-- [ ] Services start without NATS and fall back to polling-only sync
-- [ ] `golangci-lint run` passes (if applicable)
+- [x] `docker-compose.yml` includes NATS JetStream server
+- [x] All services configured with `CHAMICORE_NATS_URL` environment variable
+- [x] Helm values include NATS chart as optional dependency
+- [x] `make compose-up` starts NATS alongside other services
+- [x] Services start without NATS and fall back to polling-only sync
+- [x] `golangci-lint run` passes (if applicable)
 
 ---
 
@@ -1890,5 +1890,5 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
-| Phase 7: Events (NATS) | P7.1 — P7.6 | 4/6 | In progress |
-| **Total** | | **28/47** | |
+| Phase 7: Events (NATS) | P7.1 — P7.6 | 5/6 | In progress |
+| **Total** | | **29/47** | |
