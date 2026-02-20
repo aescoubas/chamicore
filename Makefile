@@ -4,6 +4,8 @@
 SERVICES := chamicore-smd chamicore-bss chamicore-cloud-init chamicore-kea-sync chamicore-discovery chamicore-auth chamicore-ui chamicore-cli
 SHARED   := chamicore-lib chamicore-deploy
 DEPLOY   := chamicore-deploy
+K6       := k6
+K6_PROMETHEUS_RW_SERVER_URL ?= http://127.0.0.1:9090/api/v1/write
 
 SERVICE_DIRS := $(addprefix services/,$(SERVICES))
 SHARED_DIRS  := $(addprefix shared/,$(SHARED))
@@ -71,12 +73,18 @@ test-smoke: compose-up ## Run smoke tests against live stack (quick health check
 	cd tests && go test -tags smoke -race -count=1 -timeout 30s ./smoke/...
 
 test-load: test-smoke ## Run full load/performance tests (requires k6)
-	@echo "==> Running load tests"
-	k6 run --out experimental-prometheus-rw tests/load/boot_storm.js
+	@echo "==> Running full load suite (boot, cloud-init, inventory)"
+	@command -v $(K6) >/dev/null 2>&1 || { echo "k6 not found in PATH"; exit 1; }
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw tests/load/boot_storm.js
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw tests/load/cloud_init_storm.js
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw tests/load/inventory_scale.js
 
 test-load-quick: test-smoke ## Run abbreviated load test (1,000 VUs, 2 min)
-	@echo "==> Running quick load test"
-	k6 run --out experimental-prometheus-rw -e QUICK=true tests/load/boot_storm.js
+	@echo "==> Running quick load suite (1,000 VUs, 2 min per scenario)"
+	@command -v $(K6) >/dev/null 2>&1 || { echo "k6 not found in PATH"; exit 1; }
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw -e QUICK=true tests/load/boot_storm.js
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw -e QUICK=true tests/load/cloud_init_storm.js
+	K6_PROMETHEUS_RW_SERVER_URL=$(K6_PROMETHEUS_RW_SERVER_URL) $(K6) run --out experimental-prometheus-rw -e QUICK=true tests/load/inventory_scale.js
 
 test-all: test-cover test-integration test-system test-smoke ## Run all test levels (unit + integration + system + smoke)
 

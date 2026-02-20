@@ -1614,7 +1614,7 @@ Quick health verification tests. Build tag: `//go:build smoke`. Must complete in
 - [x] One create + read operation per service succeeds
 - [x] Total runtime < 30 seconds
 
-### P6.3: load tests [ ]
+### P6.3: load tests [x]
 
 **Depends on:** P6.2
 **Repo:** chamicore (monorepo `tests/load/` directory)
@@ -1630,12 +1630,12 @@ k6 load test scripts as defined in AGENTS.md (Load and Performance Tests section
 and ADR-012. Boot storm simulation at 10,000+ VUs.
 
 **Done when:**
-- [ ] Boot storm test: 10,000 concurrent boot script requests at p99 < 100ms
-- [ ] Cloud-init storm test: 10,000 concurrent payload fetches at p99 < 100ms
-- [ ] Inventory scale test: 50,000 components, single GET p99 < 10ms
-- [ ] `baselines.json` contains initial performance thresholds
-- [ ] `make test-load` runs the full suite
-- [ ] `make test-load-quick` runs an abbreviated version (1,000 VUs, 2 min)
+- [x] Boot storm test: 10,000 concurrent boot script requests at p99 < 100ms
+- [x] Cloud-init storm test: 10,000 concurrent payload fetches at p99 < 100ms
+- [x] Inventory scale test: 50,000 components, single GET p99 < 10ms
+- [x] `baselines.json` contains initial performance thresholds
+- [x] `make test-load` runs the full suite
+- [x] `make test-load-quick` runs an abbreviated version (1,000 VUs, 2 min)
 
 ### P6.4: Makefile update [ ]
 
@@ -1889,6 +1889,6 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
-| Phase 6: Quality | P6.1 — P6.4 | 2/4 | In progress |
+| Phase 6: Quality | P6.1 — P6.4 | 3/4 | In progress |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **22/47** | |
+| **Total** | | **23/47** | |

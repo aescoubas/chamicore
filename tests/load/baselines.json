@@ -1,0 +1,37 @@
+{
+  "boot_storm": {
+    "description": "BSS boot script endpoint latency under boot storm load",
+    "http_req_duration_p50_ms": 10,
+    "http_req_duration_p95_ms": 50,
+    "http_req_duration_p99_ms": 100,
+    "http_req_failed_rate_max": 0.001,
+    "target_vus": 10000,
+    "spike_vus": 20000,
+    "sustained_duration": "10m"
+  },
+  "cloud_init_storm": {
+    "description": "Cloud-init serving endpoint latency under node boot storm load",
+    "http_req_duration_p50_ms": 10,
+    "http_req_duration_p95_ms": 50,
+    "http_req_duration_p99_ms": 100,
+    "http_req_failed_rate_max": 0.001,
+    "target_vus": 10000,
+    "spike_vus": 20000,
+    "sustained_duration": "10m"
+  },
+  "inventory_scale": {
+    "description": "SMD single-resource GET latency with 50,000 registered components",
+    "http_req_duration_p50_ms": 5,
+    "http_req_duration_p95_ms": 8,
+    "http_req_duration_p99_ms": 10,
+    "http_req_failed_rate_max": 0.001,
+    "seed_components": 50000,
+    "default_vus": 2000,
+    "default_duration": "10m"
+  },
+  "quick_mode": {
+    "description": "Abbreviated smoke-style performance run",
+    "vus": 1000,
+    "duration": "2m"
+  }
+}
