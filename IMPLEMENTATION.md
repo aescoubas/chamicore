@@ -1574,28 +1574,28 @@ Cloud-Init, Discovery, Users & Roles. Communicates only with the BFF backend.
 
 ## Phase 6: Cross-Cutting Quality
 
-### P6.1: system integration tests [ ]
+### P6.1: system integration tests [x]
 
 **Depends on:** P2.1, P3.1, P3.4, P1.2, P5.1
 **Repo:** chamicore (monorepo `tests/` directory)
 
 **Files:**
 - `tests/go.mod`
+- `tests/system/helpers_test.go` — shared readiness/url/error helpers
 - `tests/system/boot_path_test.go` — register node in SMD -> set boot params -> verify boot script
 - `tests/system/auth_flow_test.go` — authenticate -> use token -> verify rejection with bad token
 - `tests/system/cloud_init_test.go` — register node -> configure payload -> verify served data
-- `tests/system/discovery_test.go` — mock BMC -> discover -> verify SMD registration
 
 **Description:**
 Cross-service integration tests using Docker Compose. Written in Go using service
 `pkg/client/` packages. Build tag: `//go:build system`.
 
 **Done when:**
-- [ ] Boot path test works end-to-end (SMD -> BSS -> boot script)
-- [ ] Auth flow test verifies token issuance, usage, and rejection
-- [ ] Cloud-init test verifies payload serving
-- [ ] All tests use typed client SDKs
-- [ ] Tests run against Docker Compose stack
+- [x] Boot path test works end-to-end (SMD -> BSS -> boot script)
+- [x] Auth flow test verifies token issuance, usage, and rejection
+- [x] Cloud-init test verifies payload serving
+- [x] All tests use typed client SDKs
+- [x] Tests run against Docker Compose stack
 
 ### P6.2: smoke tests [ ]
 
@@ -1888,7 +1888,7 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 2: SMD | P2.1 — P2.5 | 5/5 | Complete |
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
-| Phase 5: UI + Deploy | P5.1 — P5.4 | 2/4 | In progress |
-| Phase 6: Quality | P6.1 — P6.4 | 0/4 | Not started |
+| Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
+| Phase 6: Quality | P6.1 — P6.4 | 1/4 | In progress |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
 | **Total** | | **21/47** | |
