@@ -1794,16 +1794,16 @@ The relay daemon:
 - [x] 100% test coverage on non-integration code
 - [x] `golangci-lint run` passes
 
-### P7.4: add event publishing to SMD [ ]
+### P7.4: add event publishing to SMD [x]
 
 **Depends on:** P7.3, P2.1
 **Repo:** chamicore-smd
 
 **Files:**
-- `migrations/postgres/000002_add_outbox.up.sql`
-- `migrations/postgres/000002_add_outbox.down.sql`
+- `migrations/postgres/000004_outbox.up.sql`
+- `migrations/postgres/000004_outbox.down.sql`
 - Updated store methods to write outbox events within transactions
-- Updated `cmd/smd/main.go` to start outbox relay
+- Updated `cmd/chamicore-smd/main.go` to start outbox relay
 
 **Description:**
 Add event publishing to SMD's component CRUD operations. When a component is created,
@@ -1816,14 +1816,14 @@ Events published:
 - `chamicore.smd.components.deleted` — after successful component deletion
 
 **Done when:**
-- [ ] Outbox migration applied to `smd` schema
-- [ ] `CreateComponent`, `UpdateComponent`, `DeleteComponent` write outbox events in the same transaction
-- [ ] Outbox relay starts alongside the HTTP server in `main.go`
-- [ ] Events are published to NATS `CHAMICORE_SMD` stream
-- [ ] Existing HTTP sync endpoints (ETags) continue to work unchanged
-- [ ] Integration tests verify events are published on component changes
-- [ ] 100% test coverage maintained
-- [ ] `golangci-lint run` passes
+- [x] Outbox migration applied to `smd` schema
+- [x] `CreateComponent`, `UpdateComponent`, `DeleteComponent` write outbox events in the same transaction
+- [x] Outbox relay starts alongside the HTTP server in `main.go`
+- [x] Events are published to NATS `CHAMICORE_SMD` stream
+- [x] Existing HTTP sync endpoints (ETags) continue to work unchanged
+- [x] Integration tests verify events are published on component changes
+- [x] 100% test coverage maintained
+- [x] `golangci-lint run` passes
 
 ### P7.5: event-driven sync for BSS and Cloud-Init [ ]
 
@@ -1890,5 +1890,5 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
-| Phase 7: Events (NATS) | P7.1 — P7.6 | 3/6 | In progress |
-| **Total** | | **27/47** | |
+| Phase 7: Events (NATS) | P7.1 — P7.6 | 4/6 | In progress |
+| **Total** | | **28/47** | |
