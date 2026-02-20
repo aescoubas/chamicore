@@ -1748,7 +1748,7 @@ Consumer configuration:
 - [x] 100% test coverage on non-integration code
 - [x] `golangci-lint run` passes
 
-### P7.3: transactional outbox pattern [ ]
+### P7.3: transactional outbox pattern [x]
 
 **Depends on:** P7.2, P0.5
 **Repo:** chamicore-lib
@@ -1785,14 +1785,14 @@ The relay daemon:
 4. Optionally uses PostgreSQL `LISTEN/NOTIFY` for low-latency notification instead of polling
 
 **Done when:**
-- [ ] `outbox.Write(tx, event)` inserts an event into the outbox table within an existing transaction
-- [ ] `outbox.NewRelay(db, publisher, cfg)` starts a relay that publishes unsent events
-- [ ] Relay processes events in order, with configurable batch size and poll interval
-- [ ] Relay handles publisher failures gracefully (retry with backoff, no data loss)
-- [ ] `outbox.MigrationSQL(schema)` generates the outbox DDL for any schema name
-- [ ] Integration tests verify the full flow: write → relay → NATS → subscriber receives
-- [ ] 100% test coverage on non-integration code
-- [ ] `golangci-lint run` passes
+- [x] `outbox.Write(tx, event)` inserts an event into the outbox table within an existing transaction
+- [x] `outbox.NewRelay(db, publisher, cfg)` starts a relay that publishes unsent events
+- [x] Relay processes events in order, with configurable batch size and poll interval
+- [x] Relay handles publisher failures gracefully (retry with backoff, no data loss)
+- [x] `outbox.MigrationSQL(schema)` generates the outbox DDL for any schema name
+- [x] Integration tests verify the full flow: write → relay → NATS → subscriber receives
+- [x] 100% test coverage on non-integration code
+- [x] `golangci-lint run` passes
 
 ### P7.4: add event publishing to SMD [ ]
 
@@ -1890,5 +1890,5 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
-| Phase 7: Events (NATS) | P7.1 — P7.6 | 2/6 | In progress |
-| **Total** | | **26/47** | |
+| Phase 7: Events (NATS) | P7.1 — P7.6 | 3/6 | In progress |
+| **Total** | | **27/47** | |
