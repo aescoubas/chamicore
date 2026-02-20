@@ -1637,7 +1637,7 @@ and ADR-012. Boot storm simulation at 10,000+ VUs.
 - [x] `make test-load` runs the full suite
 - [x] `make test-load-quick` runs an abbreviated version (1,000 VUs, 2 min)
 
-### P6.4: Makefile update [ ]
+### P6.4: Makefile update [x]
 
 **Depends on:** P4.1
 **Repo:** chamicore (monorepo)
@@ -1649,8 +1649,8 @@ and ADR-012. Boot storm simulation at 10,000+ VUs.
 Add `chamicore-discovery` to the `SERVICES` variable in the top-level Makefile.
 
 **Done when:**
-- [ ] `SERVICES` includes `chamicore-discovery`
-- [ ] `make build`, `make test`, `make lint` include discovery
+- [x] `SERVICES` includes `chamicore-discovery`
+- [x] `make build`, `make test`, `make lint` include discovery
 
 ---
 
@@ -1662,7 +1662,7 @@ Add `chamicore-discovery` to the `SERVICES` variable in the top-level Makefile.
 > event-driven change propagation. Phase 0-6 services work without events; Phase 7
 > adds events as a performance and decoupling enhancement.
 
-### P7.1: events/ core packages in chamicore-lib [ ]
+### P7.1: events/ core packages in chamicore-lib [x]
 
 **Depends on:** P0.1
 **Repo:** chamicore-lib
@@ -1703,13 +1703,13 @@ chamicore.auth.tokens.revoked
 ```
 
 **Done when:**
-- [ ] `Event` struct with CloudEvents-compatible fields
-- [ ] `Publisher` interface with `Publish(ctx, Event) error`
-- [ ] `Subscriber` interface with `Subscribe(ctx, subject, func(Event) error) error` and `Close() error`
-- [ ] `NoopPublisher` for testing and services that don't publish
-- [ ] `SubjectFor(service, resource, action) string` helper
-- [ ] 100% test coverage
-- [ ] `golangci-lint run` passes
+- [x] `Event` struct with CloudEvents-compatible fields
+- [x] `Publisher` interface with `Publish(ctx, Event) error`
+- [x] `Subscriber` interface with `Subscribe(ctx, subject, func(Event) error) error` and `Close() error`
+- [x] `NoopPublisher` for testing and services that don't publish
+- [x] `SubjectFor(service, resource, action) string` helper
+- [x] 100% test coverage
+- [x] `golangci-lint run` passes
 
 ### P7.2: NATS JetStream publisher/subscriber [ ]
 
@@ -1889,6 +1889,6 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
 | Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
-| Phase 6: Quality | P6.1 — P6.4 | 3/4 | In progress |
-| Phase 7: Events (NATS) | P7.1 — P7.6 | 0/6 | Not started |
-| **Total** | | **23/47** | |
+| Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
+| Phase 7: Events (NATS) | P7.1 — P7.6 | 1/6 | In progress |
+| **Total** | | **25/47** | |
