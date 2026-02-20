@@ -1825,14 +1825,14 @@ Events published:
 - [x] 100% test coverage maintained
 - [x] `golangci-lint run` passes
 
-### P7.5: event-driven sync for BSS and Cloud-Init [ ]
+### P7.5: event-driven sync for BSS and Cloud-Init [~]
 
 **Depends on:** P7.4, P3.3, P3.5
 **Repo:** chamicore-bss, chamicore-cloud-init
 
 **Files (per service):**
 - `internal/sync/events.go` — NATS subscriber that listens for SMD component events
-- Updated `internal/sync/sync.go` — hybrid sync: events for real-time, polling as fallback
+- Updated `internal/sync/syncer.go` — hybrid sync: events for real-time, polling as fallback
 - Updated `cmd/<service>/main.go` — start event subscriber alongside polling loop
 
 **Description:**
@@ -1845,12 +1845,12 @@ the next poll cycle. The polling loop continues to run at a reduced frequency (e
 every 5 minutes instead of every 30 seconds) as a consistency backstop.
 
 **Done when:**
-- [ ] BSS subscribes to `chamicore.smd.components.>` events
-- [ ] Cloud-Init subscribes to `chamicore.smd.components.>` events
-- [ ] Event-triggered sync updates the local cache within seconds of an SMD change
-- [ ] Polling loop continues as fallback at reduced frequency
-- [ ] Services start and work correctly even if NATS is unavailable (graceful degradation)
-- [ ] Integration tests verify event-driven sync latency is < 5 seconds
+- [x] BSS subscribes to `chamicore.smd.components.>` events
+- [x] Cloud-Init subscribes to `chamicore.smd.components.>` events
+- [x] Event-triggered sync updates the local cache within seconds of an SMD change
+- [x] Polling loop continues as fallback at reduced frequency
+- [x] Services start and work correctly even if NATS is unavailable (graceful degradation)
+- [x] Integration tests verify event-driven sync latency is < 5 seconds
 - [ ] 100% test coverage maintained
 - [ ] `golangci-lint run` passes
 
