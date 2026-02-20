@@ -1521,7 +1521,7 @@ per-service sub-charts or templates. See ADR-008.
 - [x] `helm test chamicore` runs smoke tests
 - [x] Ingress templates support configurable host/TLS
 
-### P5.3: Web UI backend (Go BFF) [~]
+### P5.3: Web UI backend (Go BFF) [x]
 
 **Depends on:** P1.6, P2.5, P3.7
 **Repo:** chamicore-ui
@@ -1545,9 +1545,9 @@ microservices on behalf of the frontend.
 - [x] BFF API proxies requests to SMD, BSS, Cloud-Init, Auth
 - [x] Session-based auth with secure HTTP-only cookies
 - [x] OIDC login flow via chamicore-auth
-- [ ] 100% test coverage on Go backend
+- [x] 100% test coverage on Go backend
 
-### P5.4: Web UI frontend (Vue.js) [ ]
+### P5.4: Web UI frontend (Vue.js) [x]
 
 **Depends on:** P5.3
 **Repo:** chamicore-ui
@@ -1561,14 +1561,14 @@ Vue.js 3 SPA with TypeScript. Key views: Dashboard, Inventory, Boot Configuratio
 Cloud-Init, Discovery, Users & Roles. Communicates only with the BFF backend.
 
 **Done when:**
-- [ ] Dashboard view shows system overview (component counts, recent events)
-- [ ] Inventory view lists and filters components
-- [ ] Boot config view manages BSS boot parameters
-- [ ] Cloud-Init view manages payloads
-- [ ] User/role management view for Casbin policies
-- [ ] All views work end-to-end through the BFF backend
-- [ ] TypeScript strict mode, ESLint, Prettier passing
-- [ ] Vitest unit tests for stores and key components
+- [x] Dashboard view shows system overview (component counts, recent events)
+- [x] Inventory view lists and filters components
+- [x] Boot config view manages BSS boot parameters
+- [x] Cloud-Init view manages payloads
+- [x] User/role management view for Casbin policies
+- [x] All views work end-to-end through the BFF backend
+- [x] TypeScript strict mode, ESLint, Prettier passing
+- [x] Vitest unit tests for stores and key components
 
 ---
 
