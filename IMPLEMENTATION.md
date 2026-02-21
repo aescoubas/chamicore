@@ -1892,3 +1892,132 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 5/6 | In progress |
 | **Total** | | **29/47** | |
+
+---
+
+## Independent Assessment (2026-02-20)
+
+This section records an implementation audit of the monorepo/submodules against the
+phase criteria above. It is intended to keep roadmap status aligned with observed behavior.
+
+### Key findings
+
+1. Root `make test` is currently broken.
+   - `Makefile` runs `make -C <dir> test` for every entry in `ALL_DIRS`.
+   - `shared/chamicore-deploy/Makefile` has no `test` target, so the root target fails.
+
+2. Integration testing is not currently green across all repos.
+   - `make test-integration` fails in `services/chamicore-auth` due to missing `go.sum`
+     entries for `github.com/testcontainers/testcontainers-go` (via `chamicore-lib/testutil`).
+
+3. Multiple tasks marked complete require `100%` coverage, but current measured totals are:
+   - `shared/chamicore-lib`: `97.7%`
+   - `services/chamicore-auth`: `63.8%`
+   - `services/chamicore-smd`: `56.5%`
+   - `services/chamicore-bss`: `66.1%`
+   - `services/chamicore-cloud-init`: `63.7%`
+   - `services/chamicore-kea-sync`: `80.8%`
+   - `services/chamicore-discovery`: `58.6%`
+   - `services/chamicore-ui`: `100.0%`
+   - `services/chamicore-cli`: `100.0%`
+
+4. Root build/test/lint orchestration misses some Go modules.
+   - `services/chamicore-cli` and `shared/chamicore-lib` have `go.mod` but no `Makefile`.
+   - Root `make build`, `make test`, and `make lint` currently skip those modules.
+
+5. `make test-cover` does not enforce a `100%` threshold despite claiming enforcement.
+   - It prints coverage but does not fail below threshold.
+
+6. Roadmap status is inconsistent with actual implementation in parts of Phase 3 and Phase 4.
+   - Substantial BSS/Cloud-Init/Discovery functionality exists in code and tests.
+   - Progress table currently reports Phase 3 and Phase 4 as `0/*`, which is stale.
+
+7. Phase 4 remains partially incomplete.
+   - `chamicore-discovery` service/dual-mode CLI is substantially implemented.
+   - `chamicore-cli` still lacks most per-service and composite workflows (P4.5, P4.6 scope).
+
+8. Phase 7 remains in progress as documented (`P7.5 [~]`).
+   - Event-driven sync behavior is present.
+   - Coverage/lint completion criteria for P7.5 remain open.
+
+### Recommended fixes (priority order)
+
+1. Stabilize root CI task orchestration.
+   - Update root `Makefile` so `build/test/lint` handle all `go.mod` modules reliably.
+   - Either add `test`/`lint` stubs in non-Go repos (deploy), or skip non-applicable targets.
+
+2. Fix Phase 1 verification blockers first (auth).
+   - Repair `services/chamicore-auth` integration dependency state (`go.mod/go.sum`) so
+     `go test -tags integration ./...` is green.
+   - Raise Phase 1 code coverage to the documented target, then re-run lint and integration.
+
+3. Enforce coverage policy in tooling.
+   - Make `make test-cover` fail when total coverage is below required threshold.
+   - Document any explicit exclusions if strict 100% is intentionally not feasible.
+
+4. Reconcile roadmap status with code reality.
+   - Update P3 and P4 task statuses from observed implementation state.
+   - Keep `Progress Tracking` totals consistent with task checkbox state.
+
+5. Complete remaining functional gaps after CI stabilization.
+   - Finish `chamicore-cli` per-service commands and composite workflows (P4.5/P4.6).
+   - Close P7.5 remaining acceptance criteria (coverage and lint).
+
+### Verification baseline to use after fixes
+
+Run, at minimum:
+
+```bash
+make test
+make test-cover
+make test-integration
+make test-smoke
+make test-system
+```
+
+Optional (environment-dependent):
+
+```bash
+make test-load-quick
+make test-load
+```
+
+### Remediation Update (2026-02-21)
+
+Phase 1 (`services/chamicore-auth`) has been partially remediated against the
+verification blockers listed above.
+
+Completed in this pass:
+
+1. Integration test blocker fixed.
+   - Added and normalized missing test dependencies in `go.mod`/`go.sum`.
+   - `go test -tags integration ./...` is now green in `services/chamicore-auth`.
+
+2. Store behavior fix.
+   - Normalized nil credential tags to `{}` in create/update store paths to avoid
+     JSON NULL round-trips in integration scenarios.
+
+3. Coverage uplift with targeted error-path tests.
+   - Added focused unit tests for store SQL error paths (via `sqlmock`).
+   - Added authn error-path tests (`GenerateSecret`, `generateJTI`, `IssueToken`).
+   - Added authz adapter/enforcer SQL-mocked tests.
+   - Added role-handler error-path tests and crypto nonce-failure test.
+
+Current measured Phase 1 coverage status:
+
+- `services/chamicore-auth` total (`go test -tags integration -coverprofile=... ./...`):
+  **91.7%** (up from baseline **63.8%**).
+
+Remaining gaps to reach strict `100%` Phase 1 criterion:
+
+1. `cmd/chamicore-auth/main.go` remains partially covered (~77.5%).
+   - Remaining branches are startup/fatal and shutdown edge paths requiring
+     test harness refactoring (or subprocess-driven coverage tests).
+
+2. A set of defensive error branches in handlers/authn/store are still unhit.
+   - Mostly low-probability runtime error paths (adapter/middleware/dependency
+     failure branches) that need additional fault-injection style tests.
+
+3. `golangci-lint` verification still environment-blocked locally.
+   - `golangci-lint` binary is not present in this environment; lint pass must be
+     re-verified in CI or with local tool installation.
