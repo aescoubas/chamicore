@@ -2235,3 +2235,62 @@ Remaining Phase 4 functional gaps after this increment:
 2. P4.6 composite workflows still pending:
    - `chamicore node provision`
    - `chamicore node decommission`
+
+### Remediation Progress Update (2026-02-22, Phase 4 closure increment)
+
+This pass addresses the specific remaining Phase 4 CLI functional gap in `services/chamicore-cli`.
+
+Completed in this pass:
+
+1. Closed remaining P4.5 per-service command groups in `services/chamicore-cli`:
+   - SMD groups commands:
+     - `chamicore smd groups list|get|create|update|delete|add-member|remove-member`
+   - BSS bootparams commands:
+     - `chamicore bss bootparams list|get|create|update|patch|delete`
+   - Cloud-Init payload commands:
+     - `chamicore cloud-init payloads list|get|create|update|patch|delete`
+   - Auth admin command groups:
+     - `chamicore auth policy list|create|delete`
+     - `chamicore auth role list|add-member|remove-member`
+     - `chamicore auth service-account list|create|delete`
+     - `chamicore auth credential list|get|create|update|delete`
+   - Discovery commands in main CLI:
+     - `chamicore discovery target list|get|create|update|patch|delete|scan`
+     - `chamicore discovery scan list|status|trigger|cancel`
+
+2. Closed P4.6 composite workflows in `services/chamicore-cli`:
+   - `chamicore node provision`
+     - orchestrates SMD component ensure/ready, BSS bootparam upsert, Cloud-Init payload upsert.
+   - `chamicore node decommission`
+     - orchestrates Cloud-Init delete, BSS delete, and SMD state transition to `Empty`.
+   - Both workflows support `--dry-run` and emit step-by-step summaries, with partial-failure reporting.
+
+3. Wired all new command groups into root command registration (`cmd/chamicore/main.go`).
+
+4. Added test coverage for newly introduced command packages and workflow logic:
+   - `internal/bss/bss_test.go`
+   - `internal/cloudinit/cloudinit_test.go`
+   - `internal/discovery/discovery_test.go`
+   - `internal/composite/node_test.go`
+   - `internal/auth/admin_test.go`
+   - `internal/smd/groups_test.go`
+
+Validation evidence from this pass:
+
+1. `go test ./...` passes in `services/chamicore-cli` after all additions.
+2. Coverage snapshot after this increment:
+   - `services/chamicore-cli`: **62.8%** (`go test -coverprofile=coverage.out ./...`)
+
+Updated gap status for the previously reported Phase 4 CLI item:
+
+- Functional command/workflow scope: **addressed in this pass**.
+- Quality acceptance criteria still open:
+  - `services/chamicore-cli` coverage is below strict 100% target.
+
+Remaining open gaps after this increment:
+
+1. Strict coverage closure remains open:
+   - `services/chamicore-cli` still below 100%.
+   - Other repos previously identified as below threshold remain open.
+
+2. Repo-by-repo lint closure remains open (root lint runner path is fixed, but code-level findings still need cleanup).
