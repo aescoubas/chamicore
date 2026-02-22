@@ -2065,6 +2065,9 @@ What is implemented:
 - `chamicore-cloud-init`: payload CRUD, unauthenticated serving endpoints, sync loop, sync endpoints, typed client.
 - `chamicore-kea-sync`: daemon, SMD polling, Kea client integration, sync reconciliation.
 - Unit and integration tests pass in all three repos.
+- BSS integration tests now include explicit performance verification for the
+  bootscript MAC lookup query (`GetBootParamByMAC`), asserting `<1ms` median
+  DB execution time via `EXPLAIN (ANALYZE, FORMAT JSON)`.
 
 Observed gaps:
 - Coverage remains below strict acceptance:
@@ -2073,8 +2076,6 @@ Observed gaps:
   - `services/chamicore-kea-sync`: **80.8%**
 - BSS role fallback mismatch has been addressed in the
   `2026-02-22, BSS fallback alignment` remediation update below.
-- No integration benchmark evidence was found in tests for the explicit
-  `"<1ms single DB query"` criterion on bootscript path.
 - Lint runner bootstrap is fixed, but repo-level lint findings remain open.
 
 #### Phase 4 (Discovery + CLI) assessment
@@ -2141,7 +2142,6 @@ Observed gaps:
 
 1. Raise coverage in all below-threshold modules to satisfy strict 100% criteria.
 2. Fix repo lint violations uncovered by the repaired root lint path.
-3. Add explicit integration performance evidence for the BSS bootscript `"<1ms single DB query"` criterion.
 
 ### Remediation Progress Update (2026-02-22)
 
@@ -2321,5 +2321,32 @@ Completed in this pass:
    - `services/chamicore-bss/api/openapi.yaml` now documents `role` as optional override, with default behavior deriving role from synced local metadata.
 
 Updated gap status for item "BSS bootscript fallback behavior mismatch":
+
+- **Addressed in implementation**.
+
+### Remediation Progress Update (2026-02-22, BSS bootscript performance evidence)
+
+This pass closes the gap for the BSS bootscript performance acceptance evidence.
+
+Completed in this pass:
+
+1. Added an integration performance test in
+   `services/chamicore-bss/internal/store/postgres_test.go`:
+   - `TestPostgresStore_GetBootParamByMAC_PerformanceSingleQuery`
+   - Uses `EXPLAIN (ANALYZE, FORMAT JSON)` on the MAC lookup SQL used by
+     the bootscript path.
+   - Asserts median execution time across repeated samples is `<1ms`.
+
+2. Added supporting helpers in the same test file:
+   - `newTestStoreWithDB` to expose both store and DB handle for integration checks.
+   - `parseExplainExecutionMS` to decode PostgreSQL EXPLAIN JSON output.
+
+Validation evidence from this pass:
+
+1. `go test ./...` passes in `services/chamicore-bss`.
+2. `go test -tags integration ./...` passes in `services/chamicore-bss`.
+3. `go test -race -tags integration ./internal/store` passes with the new performance test.
+
+Updated gap status for item "BSS bootscript performance acceptance criterion is still not evidenced":
 
 - **Addressed in implementation**.
