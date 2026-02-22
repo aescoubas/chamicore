@@ -2192,3 +2192,46 @@ Remaining gaps after this pass:
 4. BSS bootscript fallback behavior vs roadmap wording remains unresolved and needs either:
    - implementation alignment, or
    - roadmap/acceptance text clarification.
+
+### Remediation Progress Update (2026-02-22, continued)
+
+This pass continues with the Phase 4 CLI functional gap.
+
+Completed in this pass:
+
+1. Added first per-service command group in `services/chamicore-cli`:
+   - `chamicore smd components list`
+   - `chamicore smd components get <id>`
+   - `chamicore smd components create`
+   - `chamicore smd components update <id> --etag ...`
+   - `chamicore smd components delete <id>`
+
+2. Added SMD ethernet interface commands in `services/chamicore-cli`:
+   - `chamicore smd components interfaces list`
+   - `chamicore smd components interfaces get <id>`
+   - `chamicore smd components interfaces create`
+   - `chamicore smd components interfaces delete <id>`
+
+3. Wired the new SMD command groups into root CLI registration.
+
+4. Added dedicated SMD command package tests and root-command integration test coverage for SMD command routing.
+
+Validation evidence from this pass:
+
+1. `go test ./...` passes in `services/chamicore-cli`.
+2. `go test -tags integration ./...` passes in `services/chamicore-cli`.
+3. Coverage after this increment:
+   - `services/chamicore-cli`: **96.0%** (`go test -coverprofile=coverage.out ./...`)
+
+Remaining Phase 4 functional gaps after this increment:
+
+1. Additional P4.5 command groups still pending:
+   - SMD interfaces/groups subcommands
+   - BSS bootparams subcommands
+   - Cloud-Init payload subcommands
+   - Auth policy/role/service-account/credential subcommands
+   - Discovery target/scan subcommands in main CLI
+
+2. P4.6 composite workflows still pending:
+   - `chamicore node provision`
+   - `chamicore node decommission`
