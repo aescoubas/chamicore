@@ -2115,9 +2115,10 @@ What is implemented:
 - Root `Makefile` includes corresponding targets.
 
 Observed gaps:
-- Root `make test` still fails because `shared/chamicore-deploy/Makefile` has no `test` target.
-- Root `make lint` fails immediately because `golangci-lint` binary is missing locally; additionally, `shared/chamicore-deploy/Makefile` has no `lint` target.
-- `make test-cover` still does not enforce an explicit numeric threshold despite claiming "100% enforced".
+- Root orchestration/tooling gaps were addressed in the 2026-02-22 remediation update
+  (Go-module-aware `build/test/lint/clean`, coverage threshold gate, lint runner bootstrap).
+- Lint now fails on actionable code violations (rather than missing-tool bootstrap), so
+  repo-by-repo lint remediation remains open.
 
 #### Phase 7 (events) assessment
 
@@ -2139,6 +2140,55 @@ Observed gaps:
 
 1. Close Phase 4 functional gap in `services/chamicore-cli` (P4.5 then P4.6).
 2. Raise coverage in `services/chamicore-smd`, `services/chamicore-bss`, `services/chamicore-cloud-init`, `services/chamicore-kea-sync`, and `services/chamicore-discovery` to satisfy strict criteria.
-3. Resolve root Makefile orchestration issues (`shared/chamicore-deploy` missing `test`/`lint` handling).
-4. Enforce explicit threshold check in `make test-cover`.
-5. Align BSS role-fallback behavior with roadmap/ADR intent (or update roadmap text if behavior is intentionally changed).
+3. Fix repo lint violations uncovered by the repaired root lint path.
+4. Align BSS role-fallback behavior with roadmap/ADR intent (or update roadmap text if behavior is intentionally changed).
+
+### Remediation Progress Update (2026-02-22)
+
+This pass focuses on closing the root orchestration/tooling gaps first.
+
+Completed in this pass:
+
+1. Root Makefile orchestration fixed for Go modules.
+   - Updated root `Makefile` `build`, `test`, `lint`, and `clean` targets to operate on directories with `go.mod` directly.
+   - This now includes modules previously skipped due missing per-repo `Makefile` targets:
+     - `services/chamicore-cli`
+     - `shared/chamicore-lib`
+   - Non-Go repos (notably `shared/chamicore-deploy`) are now skipped by these root Go targets instead of causing missing-target failures.
+
+2. Coverage threshold enforcement added to `make test-cover`.
+   - Added explicit numeric threshold gate (`COVER_MIN`, default `100.0`).
+   - `make test-cover` now fails when a module is below threshold instead of only printing coverage.
+
+3. Root lint execution no longer depends on preinstalled `golangci-lint`.
+   - Root `lint` now runs via:
+     - `go run github.com/golangci/golangci-lint/cmd/golangci-lint@<version> run ./...`
+   - This removes the previous hard dependency on a locally installed `golangci-lint` binary for root lint entrypoint.
+
+Validation evidence from this pass:
+
+1. `make test` from monorepo root now passes and includes:
+   - `services/chamicore-cli`
+   - `shared/chamicore-lib`
+   - without failing on `shared/chamicore-deploy`.
+
+2. `make test-cover` now fails as expected when below threshold (example observed):
+   - `services/chamicore-smd`: total `56.5%` (unit-only run) -> threshold failure emitted by target.
+
+3. `make lint` now executes linter checks and surfaces real lint findings.
+   - The failure mode has moved from "binary not found" to actionable lint violations (first observed in `services/chamicore-bss`).
+
+Remaining gaps after this pass:
+
+1. Functional scope still missing in `services/chamicore-cli` for Phase 4:
+   - P4.5 per-service command groups
+   - P4.6 composite workflows
+
+2. Coverage closure remains open across multiple repos (strict 100% criteria unmet).
+
+3. Lint closure remains open:
+   - Root lint path is fixed, but codebase lint violations must now be resolved repo-by-repo.
+
+4. BSS bootscript fallback behavior vs roadmap wording remains unresolved and needs either:
+   - implementation alignment, or
+   - roadmap/acceptance text clarification.

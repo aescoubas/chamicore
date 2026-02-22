@@ -6,6 +6,9 @@ SHARED   := chamicore-lib chamicore-deploy
 DEPLOY   := chamicore-deploy
 K6       := k6
 K6_PROMETHEUS_RW_SERVER_URL ?= http://127.0.0.1:9090/api/v1/write
+COVER_MIN ?= 100.0
+GOLANGCI_LINT_VERSION ?= v1.64.8
+GOLANGCI_LINT_CMD ?= go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 SERVICE_DIRS := $(addprefix services/,$(SERVICES))
 SHARED_DIRS  := $(addprefix shared/,$(SHARED))
@@ -29,9 +32,9 @@ update: ## Update all submodules to latest remote commits
 
 build: ## Build all services
 	@for dir in $(SERVICE_DIRS); do \
-		if [ -f "$$dir/Makefile" ]; then \
+		if [ -f "$$dir/go.mod" ]; then \
 			echo "==> Building $$dir"; \
-			$(MAKE) -C $$dir build || exit 1; \
+			cd $$dir && go build ./... && cd - > /dev/null || exit 1; \
 		fi; \
 	done
 
@@ -39,9 +42,10 @@ build: ## Build all services
 
 test: ## Run tests for all services and shared libraries
 	@for dir in $(ALL_DIRS); do \
-		if [ -f "$$dir/Makefile" ]; then \
+		if [ -f "$$dir/go.mod" ]; then \
 			echo "==> Testing $$dir"; \
-			$(MAKE) -C $$dir test || exit 1; \
+			cd $$dir && go test -race -count=1 ./... && \
+			cd - > /dev/null || exit 1; \
 		fi; \
 	done
 
@@ -51,6 +55,11 @@ test-cover: ## Run unit tests with coverage report (100% enforced)
 			echo "==> Coverage for $$dir"; \
 			cd $$dir && go test -coverprofile=coverage.out -race ./... && \
 			go tool cover -func=coverage.out && \
+			total=$$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$$3); print $$3}') && \
+			awk "BEGIN {exit !($$total + 0 >= $(COVER_MIN) + 0)}" || { \
+				echo "Coverage threshold not met for $$dir: $$total% < $(COVER_MIN)%"; \
+				exit 1; \
+			}; \
 			cd - > /dev/null || exit 1; \
 		fi; \
 	done
@@ -92,9 +101,10 @@ test-all: test-cover test-integration test-system test-smoke ## Run all test lev
 
 lint: ## Lint all services and shared libraries
 	@for dir in $(ALL_DIRS); do \
-		if [ -f "$$dir/Makefile" ]; then \
+		if [ -f "$$dir/go.mod" ]; then \
 			echo "==> Linting $$dir"; \
-			$(MAKE) -C $$dir lint || exit 1; \
+			cd $$dir && $(GOLANGCI_LINT_CMD) run ./... && \
+			cd - > /dev/null || exit 1; \
 		fi; \
 	done
 
@@ -120,8 +130,8 @@ compose-down: ## Stop development environment
 
 clean: ## Clean build artifacts for all services
 	@for dir in $(ALL_DIRS); do \
-		if [ -f "$$dir/Makefile" ]; then \
+		if [ -f "$$dir/go.mod" ]; then \
 			echo "==> Cleaning $$dir"; \
-			$(MAKE) -C $$dir clean || true; \
+			cd $$dir && go clean ./... || true; \
 		fi; \
 	done
