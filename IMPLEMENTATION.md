@@ -2021,3 +2021,124 @@ Remaining gaps to reach strict `100%` Phase 1 criterion:
 3. `golangci-lint` verification still environment-blocked locally.
    - `golangci-lint` binary is not present in this environment; lint pass must be
      re-verified in CI or with local tool installation.
+
+### Remaining Phases Audit Update (2026-02-21)
+
+Scope of this pass: **Phase 2 through Phase 7**.
+
+Verification commands run in this pass included:
+
+```bash
+# per-repo verification
+go test ./...
+go test -tags integration ./...
+go test -tags integration -coverprofile=coverage.integration.out ./...
+go tool cover -func=coverage.integration.out
+
+# root orchestration spot checks
+make test
+make lint
+```
+
+#### Phase 2 (SMD) assessment
+
+Status: **Functionally implemented, quality criteria still open**.
+
+What is implemented:
+- Component CRUD, interfaces, groups/partitions, sync list enhancements (`fields`, list ETag/If-None-Match), and typed SDK methods are present.
+- Unit and integration tests pass in `services/chamicore-smd`.
+
+Observed gaps:
+- Coverage remains below strict acceptance:
+  - `services/chamicore-smd`: **89.5%**
+- `golangci-lint` cannot be verified locally (binary unavailable).
+
+#### Phase 3 (Boot path) assessment
+
+Status: **Substantially implemented, several acceptance criteria still open**.
+
+What is implemented:
+- `chamicore-bss`: boot param CRUD, unauthenticated bootscript endpoint, sync loop, sync endpoints, typed client.
+- `chamicore-cloud-init`: payload CRUD, unauthenticated serving endpoints, sync loop, sync endpoints, typed client.
+- `chamicore-kea-sync`: daemon, SMD polling, Kea client integration, sync reconciliation.
+- Unit and integration tests pass in all three repos.
+
+Observed gaps:
+- Coverage remains below strict acceptance:
+  - `services/chamicore-bss`: **75.0%**
+  - `services/chamicore-cloud-init`: **72.9%**
+  - `services/chamicore-kea-sync`: **80.8%**
+- BSS role fallback behavior differs from roadmap wording:
+  - `internal/server/handlers_bootscript.go` currently requires `role` query param when MAC lookup misses.
+  - Roadmap text expects role fallback derived from denormalized component role data.
+- No integration benchmark evidence was found in tests for the explicit
+  `"<1ms single DB query"` criterion on bootscript path.
+- `golangci-lint` cannot be verified locally.
+
+#### Phase 4 (Discovery + CLI) assessment
+
+Status: **Discovery mostly implemented; CLI phase still incomplete**.
+
+What is implemented:
+- `chamicore-discovery` service scaffold, target CRUD, scan job handling, driver interface, Redfish/manual/CSV drivers, scanner orchestration, dual-mode CLI command tree, and service-client commands are present.
+- Discovery integrates SMD client + auth credential fetching in scanner path.
+- Unit and integration tests pass in `services/chamicore-discovery`.
+- `chamicore-cli` scaffold/auth/config/output is implemented with passing tests and 100% coverage for current scope.
+
+Observed gaps:
+- Major functional scope missing in `services/chamicore-cli`:
+  - P4.5 per-service subcommands are not implemented.
+  - P4.6 composite workflows (`node provision`, `node decommission`) are not implemented.
+- Coverage below strict acceptance for discovery:
+  - `services/chamicore-discovery`: **68.1%**
+- `golangci-lint` cannot be verified locally.
+
+#### Phase 5 (UI + deployment) assessment
+
+Status: **Implemented based on current repo content; no major functional regressions found in this pass**.
+
+What is implemented:
+- Deployment assets (`docker-compose.yml`, override, `.env.example`, Helm chart/templates/tests) are present.
+- `services/chamicore-ui` backend/frontend code and tests are present.
+- UI Go coverage is **100.0%**.
+
+Observed gaps:
+- No direct Phase 5 feature gap found in this pass.
+- Cross-repo orchestration issues (below) still affect practical validation flow.
+
+#### Phase 6 (quality) assessment
+
+Status: **Artifacts implemented; execution gates still imperfect**.
+
+What is implemented:
+- `tests/system`, `tests/smoke`, and `tests/load` suites and files exist.
+- Root `Makefile` includes corresponding targets.
+
+Observed gaps:
+- Root `make test` still fails because `shared/chamicore-deploy/Makefile` has no `test` target.
+- Root `make lint` fails immediately because `golangci-lint` binary is missing locally; additionally, `shared/chamicore-deploy/Makefile` has no `lint` target.
+- `make test-cover` still does not enforce an explicit numeric threshold despite claiming "100% enforced".
+
+#### Phase 7 (events) assessment
+
+Status: **Core event architecture implemented; P7.5 quality closure remains open**.
+
+What is implemented:
+- `shared/chamicore-lib/events`, `events/nats`, and `events/outbox` are present with tests.
+- Scoped event package coverage is **100.0%** (`go test -tags integration -coverprofile=... ./events/...`).
+- SMD outbox + relay wiring is present in `services/chamicore-smd`.
+- BSS/Cloud-Init event subscribers and hybrid sync behavior are present, including integration tests asserting event-triggered processing within 5 seconds.
+- Deployment includes NATS wiring and `CHAMICORE_NATS_URL`.
+
+Observed gaps:
+- P7.5 acceptance remains open on strict quality criteria:
+  - BSS/Cloud-Init repository-wide coverage is below 100% (75.0% / 72.9%).
+  - `golangci-lint` cannot be verified locally.
+
+### Recommended next fixes (priority)
+
+1. Close Phase 4 functional gap in `services/chamicore-cli` (P4.5 then P4.6).
+2. Raise coverage in `services/chamicore-smd`, `services/chamicore-bss`, `services/chamicore-cloud-init`, `services/chamicore-kea-sync`, and `services/chamicore-discovery` to satisfy strict criteria.
+3. Resolve root Makefile orchestration issues (`shared/chamicore-deploy` missing `test`/`lint` handling).
+4. Enforce explicit threshold check in `make test-cover`.
+5. Align BSS role-fallback behavior with roadmap/ADR intent (or update roadmap text if behavior is intentionally changed).
