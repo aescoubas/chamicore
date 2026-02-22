@@ -2042,6 +2042,10 @@ make lint
 
 #### Phase 2 (SMD) assessment
 
+Snapshot note: this assessment section captures the state at the time of the pass; later
+`Remediation Progress Update` sections may contain newer verification data and supersede
+specific gap items.
+
 Status: **Functionally implemented, quality criteria still open**.
 
 What is implemented:
@@ -2049,9 +2053,8 @@ What is implemented:
 - Unit and integration tests pass in `services/chamicore-smd`.
 
 Observed gaps:
-- Coverage remains below strict acceptance:
-  - `services/chamicore-smd`: **89.5%**
-- `golangci-lint` cannot be verified locally (binary unavailable).
+- Coverage remains below strict acceptance (`< 100%`).
+- Lint runner bootstrap is fixed, but repo-level lint findings remain open.
 
 #### Phase 3 (Boot path) assessment
 
@@ -2068,16 +2071,15 @@ Observed gaps:
   - `services/chamicore-bss`: **75.0%**
   - `services/chamicore-cloud-init`: **72.9%**
   - `services/chamicore-kea-sync`: **80.8%**
-- BSS role fallback behavior differs from roadmap wording:
-  - `internal/server/handlers_bootscript.go` currently requires `role` query param when MAC lookup misses.
-  - Roadmap text expects role fallback derived from denormalized component role data.
+- BSS role fallback mismatch has been addressed in the
+  `2026-02-22, BSS fallback alignment` remediation update below.
 - No integration benchmark evidence was found in tests for the explicit
   `"<1ms single DB query"` criterion on bootscript path.
-- `golangci-lint` cannot be verified locally.
+- Lint runner bootstrap is fixed, but repo-level lint findings remain open.
 
 #### Phase 4 (Discovery + CLI) assessment
 
-Status: **Discovery mostly implemented; CLI phase still incomplete**.
+Status: **Functional scope implemented; quality criteria still open**.
 
 What is implemented:
 - `chamicore-discovery` service scaffold, target CRUD, scan job handling, driver interface, Redfish/manual/CSV drivers, scanner orchestration, dual-mode CLI command tree, and service-client commands are present.
@@ -2086,12 +2088,11 @@ What is implemented:
 - `chamicore-cli` scaffold/auth/config/output is implemented with passing tests and 100% coverage for current scope.
 
 Observed gaps:
-- Major functional scope missing in `services/chamicore-cli`:
-  - P4.5 per-service subcommands are not implemented.
-  - P4.6 composite workflows (`node provision`, `node decommission`) are not implemented.
-- Coverage below strict acceptance for discovery:
-  - `services/chamicore-discovery`: **68.1%**
-- `golangci-lint` cannot be verified locally.
+- P4.5/P4.6 functional scope has been addressed in the
+  `2026-02-22, Phase 4 closure increment` update below.
+- Coverage remains below strict acceptance in both
+  `services/chamicore-discovery` and `services/chamicore-cli`.
+- Lint runner bootstrap is fixed, but repo-level lint findings remain open.
 
 #### Phase 5 (UI + deployment) assessment
 
@@ -2134,14 +2135,13 @@ What is implemented:
 Observed gaps:
 - P7.5 acceptance remains open on strict quality criteria:
   - BSS/Cloud-Init repository-wide coverage is below 100% (75.0% / 72.9%).
-  - `golangci-lint` cannot be verified locally.
+  - Lint runner bootstrap is fixed, but repo-level lint findings remain open.
 
 ### Recommended next fixes (priority)
 
-1. Close Phase 4 functional gap in `services/chamicore-cli` (P4.5 then P4.6).
-2. Raise coverage in `services/chamicore-smd`, `services/chamicore-bss`, `services/chamicore-cloud-init`, `services/chamicore-kea-sync`, and `services/chamicore-discovery` to satisfy strict criteria.
-3. Fix repo lint violations uncovered by the repaired root lint path.
-4. Align BSS role-fallback behavior with roadmap/ADR intent (or update roadmap text if behavior is intentionally changed).
+1. Raise coverage in all below-threshold modules to satisfy strict 100% criteria.
+2. Fix repo lint violations uncovered by the repaired root lint path.
+3. Add explicit integration performance evidence for the BSS bootscript `"<1ms single DB query"` criterion.
 
 ### Remediation Progress Update (2026-02-22)
 
@@ -2178,20 +2178,20 @@ Validation evidence from this pass:
 3. `make lint` now executes linter checks and surfaces real lint findings.
    - The failure mode has moved from "binary not found" to actionable lint violations (first observed in `services/chamicore-bss`).
 
-Remaining gaps after this pass:
+Historical gaps reported in this pass (superseded by subsequent updates below):
 
 1. Functional scope still missing in `services/chamicore-cli` for Phase 4:
    - P4.5 per-service command groups
    - P4.6 composite workflows
+   - Status: **resolved** in `2026-02-22, Phase 4 closure increment` below.
 
 2. Coverage closure remains open across multiple repos (strict 100% criteria unmet).
 
 3. Lint closure remains open:
    - Root lint path is fixed, but codebase lint violations must now be resolved repo-by-repo.
 
-4. BSS bootscript fallback behavior vs roadmap wording remains unresolved and needs either:
-   - implementation alignment, or
-   - roadmap/acceptance text clarification.
+4. BSS bootscript fallback behavior vs roadmap wording remained unresolved in this snapshot.
+   - Status: **resolved** in `2026-02-22, BSS fallback alignment` below.
 
 ### Remediation Progress Update (2026-02-22, continued)
 
@@ -2223,7 +2223,7 @@ Validation evidence from this pass:
 3. Coverage after this increment:
    - `services/chamicore-cli`: **96.0%** (`go test -coverprofile=coverage.out ./...`)
 
-Remaining Phase 4 functional gaps after this increment:
+Historical Phase 4 gaps after this increment (resolved in the next update section):
 
 1. Additional P4.5 command groups still pending:
    - SMD interfaces/groups subcommands
@@ -2231,10 +2231,12 @@ Remaining Phase 4 functional gaps after this increment:
    - Cloud-Init payload subcommands
    - Auth policy/role/service-account/credential subcommands
    - Discovery target/scan subcommands in main CLI
+   - Status: **resolved** in `2026-02-22, Phase 4 closure increment` below.
 
 2. P4.6 composite workflows still pending:
    - `chamicore node provision`
    - `chamicore node decommission`
+   - Status: **resolved** in `2026-02-22, Phase 4 closure increment` below.
 
 ### Remediation Progress Update (2026-02-22, Phase 4 closure increment)
 
