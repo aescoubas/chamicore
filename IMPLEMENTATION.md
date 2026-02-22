@@ -2350,3 +2350,42 @@ Validation evidence from this pass:
 Updated gap status for item "BSS bootscript performance acceptance criterion is still not evidenced":
 
 - **Addressed in implementation**.
+
+### Remediation Progress Update (2026-02-22, BSS lint acceptance closure)
+
+This pass closes the previously open BSS lint acceptance gap by resolving the
+code-level findings that were blocking `make lint` in `services/chamicore-bss`.
+
+Completed in this pass:
+
+1. Resolved `govet` findings:
+   - `fieldalignment` updates in:
+     - `services/chamicore-bss/internal/model/bootparam.go`
+     - `services/chamicore-bss/internal/server/server.go`
+     - `services/chamicore-bss/internal/sync/syncer.go`
+     - `services/chamicore-bss/internal/sync/syncer_test.go`
+     - `services/chamicore-bss/pkg/client/client.go`
+     - `services/chamicore-bss/pkg/types/sync.go`
+   - `shadow` fixes in:
+     - `services/chamicore-bss/internal/server/handlers_bootparam.go`
+     - `services/chamicore-bss/internal/store/postgres_bootparam.go`
+     - `services/chamicore-bss/internal/sync/syncer.go`
+
+2. Resolved `gosec` `G115` int-to-uint conversion warnings in
+   `services/chamicore-bss/internal/store/postgres_bootparam.go` by introducing
+   validated conversion helpers before building pagination SQL.
+
+3. Resolved formatting/lint hygiene findings:
+   - Applied `goimports` formatting in
+     `services/chamicore-bss/pkg/client/client_test.go`.
+   - Removed an obsolete `//nolint:govet` directive in
+     `services/chamicore-bss/internal/sync/events_test.go`.
+
+Validation evidence from this pass:
+
+1. `PATH=$(pwd)/.bin:$PATH make lint` passes in `services/chamicore-bss`.
+2. `go test ./...` passes in `services/chamicore-bss`.
+
+Updated gap status for item "Lint acceptance is still open":
+
+- **Addressed in implementation for `services/chamicore-bss`**.
