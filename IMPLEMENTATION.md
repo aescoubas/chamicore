@@ -2294,3 +2294,30 @@ Remaining open gaps after this increment:
    - Other repos previously identified as below threshold remain open.
 
 2. Repo-by-repo lint closure remains open (root lint runner path is fixed, but code-level findings still need cleanup).
+
+### Remediation Progress Update (2026-02-22, BSS fallback alignment)
+
+This pass closes the previously open BSS bootscript fallback mismatch.
+
+Completed in this pass:
+
+1. Updated BSS bootscript fallback behavior in `services/chamicore-bss/internal/server/handlers_bootscript.go`:
+   - On MAC lookup miss, BSS now derives role from locally synced denormalized metadata (MAC->role) when `role` query is not provided.
+   - `role` query remains optional as an override/backward-compatible input, but is no longer required for fallback.
+
+2. Added sync-side local role index in `services/chamicore-bss/internal/sync/syncer.go`:
+   - Syncer now maintains a MAC->role snapshot from the latest successful SMD sync.
+   - Added `RoleForMAC(mac)` lookup used by the bootscript handler.
+
+3. Updated tests to cover the new behavior:
+   - `services/chamicore-bss/internal/server/handlers_bootscript_test.go`:
+     - added fallback test where role is derived from sync state without `role` query.
+   - `services/chamicore-bss/internal/sync/syncer_test.go`:
+     - added assertions for `RoleForMAC` lookups (normalized, invalid, and missing MAC cases).
+
+4. Updated API description text:
+   - `services/chamicore-bss/api/openapi.yaml` now documents `role` as optional override, with default behavior deriving role from synced local metadata.
+
+Updated gap status for item "BSS bootscript fallback behavior mismatch":
+
+- **Addressed in implementation**.
