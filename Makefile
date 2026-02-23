@@ -14,7 +14,7 @@ SERVICE_DIRS := $(addprefix services/,$(SERVICES))
 SHARED_DIRS  := $(addprefix shared/,$(SHARED))
 ALL_DIRS     := $(SERVICE_DIRS) $(SHARED_DIRS)
 
-.PHONY: help init update build test test-cover test-integration test-system test-smoke test-load test-load-quick test-all lint docker-build compose-up compose-down clean
+.PHONY: help init update build test test-cover test-integration test-system test-smoke test-load test-load-quick test-all lint docker-build compose-up compose-down compose-vm-up compose-vm-down clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -125,6 +125,12 @@ compose-up: ## Start development environment with Docker Compose
 
 compose-down: ## Stop development environment
 	$(MAKE) -C shared/$(DEPLOY) compose-down
+
+compose-vm-up: ## Start development environment and boot a libvirt VM
+	$(MAKE) -C shared/$(DEPLOY) compose-libvirt-up
+
+compose-vm-down: ## Stop libvirt VM and development environment
+	$(MAKE) -C shared/$(DEPLOY) compose-libvirt-down
 
 ## --- Clean ---
 

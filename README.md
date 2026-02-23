@@ -60,11 +60,18 @@ cd chamicore
 # Start the full stack (requires Docker)
 make compose-up
 
+# Start the full stack and boot a libvirt VM (requires libvirt tooling)
+make compose-vm-up
+# Optional: use a libvirt network instead of user-mode networking
+# CHAMICORE_VM_NETWORK=default make compose-vm-up
+
 # Run tests
 make test
 
 # Stop everything
 make compose-down
+# Or tear down stack + VM
+make compose-vm-down
 ```
 
 ### Prerequisites
@@ -72,6 +79,7 @@ make compose-down
 - Go 1.24+
 - Node.js 20+ and npm (for chamicore-ui frontend)
 - Docker and Docker Compose
+- libvirt + `virsh` + `virt-install` + `qemu-img` (optional, for `make compose-vm-up`)
 - Make
 - Git (with submodule support)
 - [k6](https://k6.io/) (for load testing, optional)

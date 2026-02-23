@@ -2493,3 +2493,61 @@ Validation evidence from this pass (unit coverage snapshot):
 Current gap status for strict `100%` everywhere:
 
 - **Still open**. Remaining sub-100 modules continue to block `make test-cover`.
+
+### Remediation Progress Update (2026-02-23, deployment VM workflow + Kea compose)
+
+This pass closes the deployment gap around single-command libvirt VM bootstrap and
+the missing Kea service in the Docker Compose stack.
+
+Completed in this pass:
+
+1. Added a real Kea service to `shared/chamicore-deploy/docker-compose.yml`:
+   - new `kea` container with local image build context `shared/chamicore-deploy/kea/`
+   - persistent runtime/lease volumes (`kea_run`, `kea_data`)
+   - `kea-sync` now explicitly depends on `kea` in Compose startup order.
+
+2. Added Kea runtime assets in `shared/chamicore-deploy/kea/`:
+   - `Dockerfile` installing `kea-dhcp4-server` and `kea-ctrl-agent`
+   - `kea-dhcp4.conf` and `kea-ctrl-agent.conf`
+   - `run-kea.sh` entrypoint that starts DHCP, control-agent, and a compatibility
+     shim process for `reservation-*` command handling.
+
+3. Added one-command libvirt VM bootstrap workflow in
+   `shared/chamicore-deploy/scripts/`:
+   - `compose-libvirt-up.sh`: starts Compose stack and boots/creates a libvirt VM
+     (idempotent start semantics; optional recreate).
+   - `compose-libvirt-down.sh`: tears down VM and Compose stack.
+
+4. Exposed the workflow via Make targets:
+   - root `Makefile`: `compose-vm-up`, `compose-vm-down`
+   - deploy `Makefile`: `compose-libvirt-up`, `compose-libvirt-down`
+   - `.env.example` now documents VM and Kea control settings.
+
+5. Updated top-level docs in `README.md`:
+   - quick-start now includes `make compose-vm-up` / `make compose-vm-down`
+   - prerequisites now list optional libvirt tooling (`virsh`, `virt-install`,
+     `qemu-img`) for VM bootstrap.
+
+Validation evidence from this pass:
+
+1. `make -C shared/chamicore-deploy compose-config` renders the full stack with
+   the new `kea` service.
+2. `bash -n` passes for:
+   - `shared/chamicore-deploy/kea/run-kea.sh`
+   - `shared/chamicore-deploy/scripts/compose-libvirt-up.sh`
+   - `shared/chamicore-deploy/scripts/compose-libvirt-down.sh`
+3. Local Kea container smoke test passes:
+   - `docker build -t chamicore-kea-test:dev shared/chamicore-deploy/kea`
+   - `reservation-add`, `reservation-get-all`, and `reservation-del` all return
+     successful responses via `http://127.0.0.1:18000`.
+4. Libvirt VM workflow smoke test passes with compose skip mode:
+   - `CHAMICORE_VM_SKIP_COMPOSE=true ./scripts/compose-libvirt-up.sh`
+     creates and boots a test domain.
+   - `CHAMICORE_VM_SKIP_COMPOSE=true ./scripts/compose-libvirt-down.sh`
+     tears the test domain down cleanly.
+
+Updated gap status:
+
+- Single-command deploy + libvirt VM boot workflow: **addressed in implementation**.
+- Missing Kea container in Docker Compose while `kea-sync` is enabled:
+  **addressed in implementation**.
