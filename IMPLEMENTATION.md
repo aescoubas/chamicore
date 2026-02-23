@@ -1886,8 +1886,8 @@ operate correctly without it (events are optional; sync falls back to polling).
 | Phase 0: Foundation | P0.1 — P0.9 | 9/9 | Complete |
 | Phase 1: Auth | P1.1 — P1.6 | 6/6 | Complete |
 | Phase 2: SMD | P2.1 — P2.5 | 5/5 | Complete |
-| Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | Not started |
-| Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | Not started |
+| Phase 3: Boot Path | P3.1 — P3.7 | 0/7 | In progress (substantially implemented; acceptance criteria still open) |
+| Phase 4: Discovery + CLI | P4.1 — P4.6 | 0/6 | In progress (functional scope implemented; quality criteria still open) |
 | Phase 5: UI + Deploy | P5.1 — P5.4 | 4/4 | Complete |
 | Phase 6: Quality | P6.1 — P6.4 | 4/4 | Complete |
 | Phase 7: Events (NATS) | P7.1 — P7.6 | 5/6 | In progress |
