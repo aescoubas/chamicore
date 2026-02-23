@@ -2389,3 +2389,107 @@ Validation evidence from this pass:
 Updated gap status for item "Lint acceptance is still open":
 
 - **Addressed in implementation for `services/chamicore-bss`**.
+
+### Remediation Progress Update (2026-02-22, coverage uplift pass)
+
+This pass addresses the cross-module coverage gap with targeted unit-test
+expansion across multiple repositories.
+
+Completed in this pass:
+
+1. Raised `shared/chamicore-lib` to strict `100.0%` unit coverage.
+   - Added deterministic test seams and branch-complete tests in:
+     - `shared/chamicore-lib/dbutil/{migrate.go,migrate_test.go,postgres.go,postgres_test.go}`
+     - `shared/chamicore-lib/otel/{http.go,http_test.go,init.go,init_test.go}`
+
+2. Raised `services/chamicore-kea-sync` to strict `100.0%` unit coverage.
+   - Added command-path test seams and expanded branch coverage in:
+     - `services/chamicore-kea-sync/cmd/chamicore-kea-sync/{main.go,main_test.go}`
+     - `services/chamicore-kea-sync/internal/kea/client_test.go`
+     - `services/chamicore-kea-sync/internal/sync/syncer_test.go`
+
+3. Increased coverage in remaining below-threshold modules with focused tests:
+   - `services/chamicore-bss`:
+     - added store sqlmock tests and expanded handler tests
+     - key files: `internal/store/postgres_bootparam_unit_test.go`,
+       `internal/server/handlers_test.go`, `internal/server/handlers_sync_test.go`,
+       `internal/server/handlers_bootscript_test.go`, `internal/bootscript/render_test.go`
+   - `services/chamicore-cli`:
+     - expanded BSS/Cloud-Init/Discovery command branch coverage
+     - key files: `internal/bss/bss_additional_test.go`,
+       `internal/cloudinit/cloudinit_test.go`,
+       `internal/discovery/{client_test.go,discovery_additional_test.go}`
+   - `services/chamicore-discovery`:
+     - added CLI/store/model/cmd tests
+     - key files: `internal/cli/{additional_test.go,service_client_test.go}`,
+       `internal/store/postgres_unit_test.go`,
+       `internal/model/scan_test.go`, `cmd/chamicore-discovery/main_test.go`
+   - `services/chamicore-auth`:
+     - added additional sqlmock coverage for store branches
+     - key file: `internal/store/postgres_additional_unit_test.go`
+   - `services/chamicore-smd`:
+     - added unit tests for command entry/run seams and component event helpers
+     - key files: `cmd/chamicore-smd/main_test.go`,
+       `internal/store/events_component_test.go`
+   - `services/chamicore-cloud-init`:
+     - added command entry/run/helper tests
+     - key files: `cmd/chamicore-cloud-init/{main.go,main_test.go}`
+
+Validation evidence from this pass (unit coverage snapshot):
+
+- `services/chamicore-smd`: `61.8%` (was `56.5%`)
+- `services/chamicore-bss`: `86.2%` (was `66.2%`)
+- `services/chamicore-cli`: `81.4%` (was `62.8%`)
+- `services/chamicore-cloud-init`: `65.3%` (was `63.7%`)
+- `services/chamicore-discovery`: `74.9%` (was `58.6%`)
+- `services/chamicore-kea-sync`: `100.0%` (was `80.8%`)
+- `services/chamicore-auth`: `86.6%` (was `81.8%`)
+- `shared/chamicore-lib`: `100.0%` (was `97.7%`)
+- `services/chamicore-ui`: `100.0%` (unchanged)
+
+Current gap status for strict `100%` everywhere:
+
+- **Still open**. `make test-cover` continues to fail because several modules remain below `100.0%`, starting with `services/chamicore-smd`.
+
+### Remediation Progress Update (2026-02-22, continued coverage uplift)
+
+This pass continues the 100% coverage remediation with targeted branch tests in
+the lowest modules from the previous snapshot.
+
+Completed in this pass:
+
+1. `services/chamicore-discovery` coverage uplift:
+   - fixed flaky/failing CSV edge-case tests and expanded scanner/store/server tests
+   - new/updated files include:
+     - `internal/driver/csv/csv_test.go`
+     - `internal/scanner/scanner_test.go`
+     - `internal/store/postgres_success_unit_test.go`
+     - `internal/server/handlers_additional_test.go`
+   - result: module coverage increased from `74.9%` to `85.5%`.
+
+2. `services/chamicore-cloud-init` coverage uplift:
+   - made `cmd/chamicore-cloud-init` runtime path testable via injected seams in `main.go`
+   - added comprehensive command runtime tests in `cmd/chamicore-cloud-init/main_test.go`
+   - added extensive payload/sync handler branch tests in:
+     - `internal/server/handlers_additional_test.go`
+   - result: module coverage increased from `75.3%` to `91.3%`.
+
+3. `services/chamicore-cli` coverage uplift:
+   - added default admin client HTTP wrapper tests and broader auth-admin subcommand tests:
+     - `internal/auth/admin_additional_test.go`
+   - result: module coverage increased from `81.4%` to `87.7%`.
+
+Validation evidence from this pass (unit coverage snapshot):
+
+- `services/chamicore-smd`: `87.4%`
+- `services/chamicore-bss`: `86.2%`
+- `services/chamicore-cli`: `87.7%`
+- `services/chamicore-cloud-init`: `91.3%`
+- `services/chamicore-discovery`: `85.5%`
+- `services/chamicore-kea-sync`: `100.0%`
+- `services/chamicore-auth`: `86.6%`
+- `shared/chamicore-lib`: `100.0%`
+
+Current gap status for strict `100%` everywhere:
+
+- **Still open**. Remaining sub-100 modules continue to block `make test-cover`.
