@@ -105,6 +105,29 @@ export function setup() {
       }
     }
 
+    const interfaceRequests = [];
+    for (let i = start; i < end; i += 1) {
+      interfaceRequests.push({
+        method: "POST",
+        url: `${smdBaseURL}/hsm/v2/Inventory/EthernetInterfaces`,
+        body: JSON.stringify({
+          componentId: componentID(runID, i),
+          macAddr: macAddress(runSeed, i),
+        }),
+        params: { headers },
+      });
+    }
+
+    const interfaceResponses = http.batch(interfaceRequests);
+    for (let i = 0; i < interfaceResponses.length; i += 1) {
+      const response = interfaceResponses[i];
+      if (response.status !== 201 && response.status !== 409) {
+        fail(
+          `seed interface failed at index=${start + i} status=${response.status} body=${response.body}`,
+        );
+      }
+    }
+
     const bootParamRequests = [];
     for (let i = start; i < end; i += 1) {
       const component = componentID(runID, i);

@@ -750,7 +750,12 @@ func TestRunner_AbortTransition_CancelsTasks(t *testing.T) {
 		{NodeID: "node-2", BMCID: "bmc-2", Endpoint: "https://bmc-2", CredentialID: "cred-2"},
 	}, nil)
 
+	started := make(chan struct{}, 1)
 	exec := &mockExecutor{executeFn: func(ctx context.Context, req ExecutionRequest) error {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
 		<-ctx.Done()
 		return ctx.Err()
 	}}
@@ -775,6 +780,12 @@ func TestRunner_AbortTransition_CancelsTasks(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task execution did not start")
+	}
+
 	require.NoError(t, runner.AbortTransition(context.Background(), transition.ID))
 	require.Eventually(t, func() bool {
 		tasks := store.tasksForTransition(transition.ID)
@@ -788,7 +799,7 @@ func TestRunner_AbortTransition_CancelsTasks(t *testing.T) {
 		}
 		finalTransition := store.transition(transition.ID)
 		return finalTransition.State == TransitionStateCanceled && finalTransition.FailureCount == 2
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 20*time.Millisecond)
 
 	finalTransition := store.transition(transition.ID)
 	assert.Equal(t, TransitionStateCanceled, finalTransition.State)
