@@ -2679,7 +2679,7 @@ Implement SMD-derived local mapping:
 - [x] Credential reference model is per-BMC (not per-node) in V1
 - [x] Sync path has unit/integration tests for create/update/delete/missing edge cases
 
-### P8.6: Transition execution engine (async + verify + retry + concurrency) [ ]
+### P8.6: Transition execution engine (async + verify + retry + concurrency) [x]
 
 **Depends on:** P8.2, P8.5
 **Repo:** chamicore-power
@@ -2699,11 +2699,11 @@ Build asynchronous task engine with:
 - dry-run path (resolve/validate without issuing Redfish actions)
 
 **Done when:**
-- [ ] Engine enforces configured global and per-BMC limits
-- [ ] Retry policy applies only to retryable failures
-- [ ] Verification marks final success/failure correctly per node
-- [ ] Dry-run transitions produce transition/task records with `planned` semantics
-- [ ] Unit tests cover cancellation, timeout, retries exhausted, and mixed bulk outcomes
+- [x] Engine enforces configured global and per-BMC limits
+- [x] Retry policy applies only to retryable failures
+- [x] Verification marks final success/failure correctly per node
+- [x] Dry-run transitions produce transition/task records with `planned` semantics
+- [x] Unit tests cover cancellation, timeout, retries exhausted, and mixed bulk outcomes
 
 ### P8.7: HTTP handlers for transitions, power-status, and convenience actions [ ]
 
