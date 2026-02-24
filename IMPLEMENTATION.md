@@ -2585,7 +2585,7 @@ Freeze V1 contract and semantics before implementation:
 - [ ] Operation enums and request/response shapes are consistent with ADR-017
 - [ ] API examples cover single-node, bulk, dry-run, and abort flows
 
-### P8.2: Shared Redfish package in chamicore-lib [~]
+### P8.2: Shared Redfish package in chamicore-lib [x]
 
 **Depends on:** P8.1
 **Repo:** chamicore-lib
@@ -2608,9 +2608,9 @@ Extract reusable Redfish transport/auth/operations into a shared package:
 - [x] Package supports all V1 power operations and status reads
 - [x] Transport retries follow documented policy (retryable network/HTTP failures only)
 - [x] Unit tests cover success, timeout, auth failure, TLS/insecure override, malformed payloads
-- [ ] `go test -race ./...` and `golangci-lint run` pass in `shared/chamicore-lib`
+- [x] `go test -race ./...` and `golangci-lint run` pass in `shared/chamicore-lib`
 
-### P8.3: Refactor discovery Redfish driver to use shared package [~]
+### P8.3: Refactor discovery Redfish driver to use shared package [x]
 
 **Depends on:** P8.2
 **Repo:** chamicore-discovery
@@ -2627,7 +2627,7 @@ and Redfish resource interactions while preserving existing discovery behavior.
 - [x] Discovery Redfish driver compiles and behavior remains backward compatible
 - [x] No direct duplicated HTTP/Redfish transport logic remains in discovery driver
 - [x] Existing discovery Redfish tests remain green (updated as needed)
-- [ ] `go test -race ./...` and `golangci-lint run` pass in `services/chamicore-discovery`
+- [x] `go test -race ./...` and `golangci-lint run` pass in `services/chamicore-discovery`
 
 ### P8.4: chamicore-power service scaffold, config, and schema [ ]
 
