@@ -2776,7 +2776,7 @@ abort, and power-status queries.
 - [x] Retry and RFC 9457 parsing behavior matches shared HTTP client conventions
 - [x] Tests cover headers, status mapping, and error surfaces
 
-### P8.10: CLI power command group + group operations [ ]
+### P8.10: CLI power command group + group operations [x]
 
 **Depends on:** P8.9
 **Repo:** chamicore-cli
@@ -2795,10 +2795,10 @@ Add CLI workflow for power operations:
 - `--dry-run` support
 
 **Done when:**
-- [ ] CLI supports node lists and SMD group-based targeting
-- [ ] CLI can submit transition, poll/wait completion, and abort
-- [ ] CLI renders per-node statuses in table/json/yaml output modes
-- [ ] CLI tests cover success, validation errors, and partial-failure rendering
+- [x] CLI supports node lists and SMD group-based targeting
+- [x] CLI can submit transition, poll/wait completion, and abort
+- [x] CLI renders per-node statuses in table/json/yaml output modes
+- [x] CLI tests cover success, validation errors, and partial-failure rendering
 
 ### P8.11: Deployment integration + Sushy for compose-vm-up [ ]
 
