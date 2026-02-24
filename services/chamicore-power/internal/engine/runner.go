@@ -179,6 +179,11 @@ type Executor interface {
 	ExecutePowerAction(ctx context.Context, req ExecutionRequest) error
 }
 
+// NodeStateUpdater updates node state in SMD after verified power outcomes.
+type NodeStateUpdater interface {
+	UpdateNodePowerState(ctx context.Context, nodeID, powerState string) error
+}
+
 // Config controls execution policy.
 type Config struct {
 	GlobalConcurrency  int
@@ -227,6 +232,7 @@ type Runner struct {
 	store    Store
 	executor Executor
 	verifier *Verifier
+	updater  NodeStateUpdater
 	cfg      runtimeConfig
 	queue    *Queue
 
@@ -242,11 +248,21 @@ type Runner struct {
 	bmcLimiters map[string]chan struct{}
 }
 
+// Option customizes runner dependencies.
+type Option func(*Runner)
+
+// WithNodeStateUpdater sets the SMD updater used on successful task outcomes.
+func WithNodeStateUpdater(updater NodeStateUpdater) Option {
+	return func(r *Runner) {
+		r.updater = updater
+	}
+}
+
 // New creates a new transition runner.
-func New(st Store, executor Executor, reader PowerStateReader, cfg Config) *Runner {
+func New(st Store, executor Executor, reader PowerStateReader, cfg Config, opts ...Option) *Runner {
 	normalized := normalizeConfig(cfg)
 
-	return &Runner{
+	runner := &Runner{
 		store:       st,
 		executor:    executor,
 		verifier:    NewVerifier(reader, VerifyConfig{Window: cfg.VerificationWindow, PollInterval: cfg.VerificationPoll}),
@@ -255,6 +271,10 @@ func New(st Store, executor Executor, reader PowerStateReader, cfg Config) *Runn
 		progress:    make(map[string]*transitionProgress),
 		bmcLimiters: make(map[string]chan struct{}),
 	}
+	for _, opt := range opts {
+		opt(runner)
+	}
+	return runner
 }
 
 // Start launches worker goroutines. It is safe to call multiple times.
@@ -608,6 +628,11 @@ func (r *Runner) completeTask(
 		case errors.Is(resultErr, context.Canceled), errors.Is(resultErr, context.DeadlineExceeded):
 			outcomeState = TaskStateCanceled
 		default:
+			outcomeState = TaskStateFailed
+		}
+	} else if !task.DryRun && r.updater != nil {
+		if err := r.updater.UpdateNodePowerState(ctx, task.NodeID, task.FinalPowerState); err != nil {
+			task.ErrorDetail = strings.TrimSpace(fmt.Sprintf("updating SMD state: %v", err))
 			outcomeState = TaskStateFailed
 		}
 	}

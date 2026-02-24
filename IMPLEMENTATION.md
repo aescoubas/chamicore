@@ -2734,7 +2734,7 @@ Implement API surface:
   - `write:power` on transitions/actions
   - `admin:power` on admin endpoints
 
-### P8.8: SMD state updates + outbox event publishing [ ]
+### P8.8: SMD state updates + outbox event publishing [x]
 
 **Depends on:** P8.6
 **Repo:** chamicore-power, chamicore-lib
@@ -2752,10 +2752,10 @@ On successful verified power operation:
 - publish to NATS through relay
 
 **Done when:**
-- [ ] Successful transition updates SMD state (`Ready`/`Off` as applicable)
-- [ ] Transition lifecycle and per-node result events are published via outbox relay
-- [ ] Service degrades gracefully if NATS is unavailable (no data loss)
-- [ ] Integration tests validate end-to-end: transition -> SMD patch -> outbox -> NATS
+- [x] Successful transition updates SMD state (`Ready`/`Off` as applicable)
+- [x] Transition lifecycle and per-node result events are published via outbox relay
+- [x] Service degrades gracefully if NATS is unavailable (no data loss)
+- [x] Integration tests validate end-to-end: transition -> SMD patch -> outbox -> NATS
 
 ### P8.9: chamicore-power typed client SDK [ ]
 

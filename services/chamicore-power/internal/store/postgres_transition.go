@@ -11,6 +11,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 
+	"git.cscs.ch/openchami/chamicore-lib/events/outbox"
 	"git.cscs.ch/openchami/chamicore-power/internal/engine"
 )
 
@@ -32,6 +33,9 @@ func (s *PostgresStore) CreateTransition(
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if searchPathErr := setLocalPowerSearchPath(ctx, tx); searchPathErr != nil {
+		return engine.Transition{}, nil, searchPathErr
+	}
 
 	createdTransition, err := s.insertTransitionTx(ctx, tx, transition)
 	if err != nil {
@@ -46,6 +50,35 @@ func (s *PostgresStore) CreateTransition(
 			return engine.Transition{}, nil, insertErr
 		}
 		createdTasks = append(createdTasks, createdTask)
+	}
+
+	lifecycleEvent, err := newTransitionLifecycleEvent(createdTransition)
+	if err != nil {
+		return engine.Transition{}, nil, fmt.Errorf("building transition lifecycle event: %w", err)
+	}
+	if err := outbox.WriteContext(ctx, tx, lifecycleEvent); err != nil {
+		return engine.Transition{}, nil, fmt.Errorf("writing transition lifecycle outbox event: %w", err)
+	}
+
+	for _, task := range createdTasks {
+		if !isTerminalTaskState(task.State) {
+			continue
+		}
+		taskEvent, taskEventErr := newTransitionTaskResultEvent(task)
+		if taskEventErr != nil {
+			return engine.Transition{}, nil, fmt.Errorf(
+				"building transition task event for node %q: %w",
+				task.NodeID,
+				taskEventErr,
+			)
+		}
+		if writeErr := outbox.WriteContext(ctx, tx, taskEvent); writeErr != nil {
+			return engine.Transition{}, nil, fmt.Errorf(
+				"writing transition task outbox event for node %q: %w",
+				task.NodeID,
+				writeErr,
+			)
+		}
 	}
 
 	if commitErr := tx.Commit(); commitErr != nil {
@@ -65,6 +98,17 @@ func (s *PostgresStore) UpdateTransition(ctx context.Context, transition engine.
 	transition.ID = id
 	if transition.UpdatedAt.IsZero() {
 		transition.UpdatedAt = time.Now().UTC()
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return engine.Transition{}, fmt.Errorf("starting transition update transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	if searchPathErr := setLocalPowerSearchPath(ctx, tx); searchPathErr != nil {
+		return engine.Transition{}, searchPathErr
 	}
 
 	query := s.sb.
@@ -88,7 +132,7 @@ func (s *PostgresStore) UpdateTransition(ctx context.Context, transition engine.
 		return engine.Transition{}, fmt.Errorf("building transition update query: %w", err)
 	}
 
-	res, err := s.db.ExecContext(ctx, sqlStr, args...)
+	res, err := tx.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return engine.Transition{}, fmt.Errorf("updating transition %q: %w", id, err)
 	}
@@ -99,6 +143,18 @@ func (s *PostgresStore) UpdateTransition(ctx context.Context, transition engine.
 	}
 	if affected == 0 {
 		return engine.Transition{}, ErrNotFound
+	}
+
+	event, err := newTransitionLifecycleEvent(transition)
+	if err != nil {
+		return engine.Transition{}, fmt.Errorf("building transition lifecycle event: %w", err)
+	}
+	if writeErr := outbox.WriteContext(ctx, tx, event); writeErr != nil {
+		return engine.Transition{}, fmt.Errorf("writing transition lifecycle outbox event: %w", writeErr)
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return engine.Transition{}, fmt.Errorf("committing transition update transaction: %w", commitErr)
 	}
 
 	updated, err := s.GetTransition(ctx, id)
@@ -128,6 +184,17 @@ func (s *PostgresStore) UpdateTransitionTask(ctx context.Context, task engine.Ta
 		task.UpdatedAt = time.Now().UTC()
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return engine.Task{}, fmt.Errorf("starting transition task update transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	if searchPathErr := setLocalPowerSearchPath(ctx, tx); searchPathErr != nil {
+		return engine.Task{}, searchPathErr
+	}
+
 	query := s.sb.
 		Update("power.transition_tasks").
 		Set("transition_id", task.TransitionID).
@@ -151,7 +218,7 @@ func (s *PostgresStore) UpdateTransitionTask(ctx context.Context, task engine.Ta
 		return engine.Task{}, fmt.Errorf("building transition task update query: %w", err)
 	}
 
-	res, err := s.db.ExecContext(ctx, sqlStr, args...)
+	res, err := tx.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return engine.Task{}, fmt.Errorf("updating transition task %q: %w", id, err)
 	}
@@ -162,6 +229,20 @@ func (s *PostgresStore) UpdateTransitionTask(ctx context.Context, task engine.Ta
 	}
 	if affected == 0 {
 		return engine.Task{}, ErrNotFound
+	}
+
+	if isTerminalTaskState(task.State) {
+		event, err := newTransitionTaskResultEvent(task)
+		if err != nil {
+			return engine.Task{}, fmt.Errorf("building transition task event: %w", err)
+		}
+		if err := outbox.WriteContext(ctx, tx, event); err != nil {
+			return engine.Task{}, fmt.Errorf("writing transition task outbox event: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return engine.Task{}, fmt.Errorf("committing transition task update transaction: %w", err)
 	}
 
 	return task, nil
@@ -181,8 +262,8 @@ func (s *PostgresStore) ListTransitions(ctx context.Context, limit, offset int) 
 	}
 
 	var total int
-	if err := s.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("counting transitions: %w", err)
+	if scanErr := s.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); scanErr != nil {
+		return nil, 0, fmt.Errorf("counting transitions: %w", scanErr)
 	}
 
 	query := s.sb.
@@ -204,8 +285,8 @@ func (s *PostgresStore) ListTransitions(ctx context.Context, limit, offset int) 
 		).
 		From("power.transitions").
 		OrderBy("queued_at DESC", "id DESC").
-		Limit(uint64(limit)).
-		Offset(uint64(offset))
+		Limit(safeUint64(limit)).
+		Offset(safeUint64(offset))
 
 	sqlStr, args, err := query.ToSql()
 	if err != nil {
@@ -736,5 +817,31 @@ func normalizeTransitionPageLimit(limit int) int {
 		return maxTransitionPageLimit
 	default:
 		return limit
+	}
+}
+
+func safeUint64(value int) uint64 {
+	if value < 0 {
+		return 0
+	}
+	return uint64(value)
+}
+
+func setLocalPowerSearchPath(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, "SET LOCAL search_path TO power"); err != nil {
+		return fmt.Errorf("setting local search_path: %w", err)
+	}
+	return nil
+}
+
+func isTerminalTaskState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case engine.TaskStateSucceeded,
+		engine.TaskStateFailed,
+		engine.TaskStateCanceled,
+		engine.TaskStatePlanned:
+		return true
+	default:
+		return false
 	}
 }

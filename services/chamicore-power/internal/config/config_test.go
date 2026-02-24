@@ -12,6 +12,8 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_LISTEN_ADDR", "")
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "")
 	t.Setenv("CHAMICORE_POWER_SMD_URL", "")
+	t.Setenv("CHAMICORE_NATS_URL", "")
+	t.Setenv("CHAMICORE_POWER_NATS_STREAM", "")
 	t.Setenv("CHAMICORE_POWER_LOG_LEVEL", "")
 	t.Setenv("CHAMICORE_POWER_DEV_MODE", "")
 	t.Setenv("CHAMICORE_POWER_JWKS_URL", "")
@@ -38,6 +40,8 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, defaultListenAddr, cfg.ListenAddr)
 	assert.Equal(t, defaultDSN, cfg.DBDSN)
 	assert.Equal(t, defaultSMDURL, cfg.SMDURL)
+	assert.Equal(t, defaultNATSURL, cfg.NATSURL)
+	assert.Equal(t, defaultNATSStream, cfg.NATSStream)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, defaultPrometheusAddr, cfg.PrometheusAddr)
 	assert.Equal(t, defaultSyncInterval, cfg.MappingSyncInterval)
@@ -57,6 +61,8 @@ func TestLoad_Defaults(t *testing.T) {
 func TestLoad_Normalization(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "postgres://example")
 	t.Setenv("CHAMICORE_POWER_SMD_URL", "http://smd.local:27779/")
+	t.Setenv("CHAMICORE_NATS_URL", "nats://nats:4222")
+	t.Setenv("CHAMICORE_POWER_NATS_STREAM", " POWER_STREAM ")
 	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", "45s")
 	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_ON_STARTUP", "false")
 	t.Setenv("CHAMICORE_POWER_DEFAULT_CREDENTIAL_ID", " cred-default ")
@@ -69,6 +75,8 @@ func TestLoad_Normalization(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "http://smd.local:27779/", cfg.SMDURL)
+	assert.Equal(t, "nats://nats:4222", cfg.NATSURL)
+	assert.Equal(t, "POWER_STREAM", cfg.NATSStream)
 	assert.Equal(t, 45*time.Second, cfg.MappingSyncInterval)
 	assert.False(t, cfg.MappingSyncOnStartup)
 	assert.Equal(t, "cred-default", cfg.DefaultCredentialID)
@@ -80,6 +88,7 @@ func TestLoad_Normalization(t *testing.T) {
 
 func TestLoad_InvalidOrZeroUsesDefaults(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "postgres://example")
+	t.Setenv("CHAMICORE_POWER_NATS_STREAM", " ")
 	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", "nope")
 	t.Setenv("CHAMICORE_POWER_BULK_MAX_NODES", "0")
 	t.Setenv("CHAMICORE_POWER_RETRY_ATTEMPTS", "-1")
@@ -91,6 +100,7 @@ func TestLoad_InvalidOrZeroUsesDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, defaultSyncInterval, cfg.MappingSyncInterval)
+	assert.Equal(t, defaultNATSStream, cfg.NATSStream)
 	assert.Equal(t, defaultBulkMaxNodes, cfg.BulkMaxNodes)
 	assert.Equal(t, defaultRetryAttempts, cfg.RetryAttempts)
 	assert.Equal(t, defaultTransitionTimeout, cfg.TransitionDeadline)

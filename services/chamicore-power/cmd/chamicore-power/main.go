@@ -16,12 +16,15 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"git.cscs.ch/openchami/chamicore-lib/dbutil"
+	"git.cscs.ch/openchami/chamicore-lib/events/nats"
+	"git.cscs.ch/openchami/chamicore-lib/events/outbox"
 	baseclient "git.cscs.ch/openchami/chamicore-lib/httputil/client"
 	"git.cscs.ch/openchami/chamicore-lib/otel"
 	"git.cscs.ch/openchami/chamicore-power/api"
 	"git.cscs.ch/openchami/chamicore-power/internal/config"
 	"git.cscs.ch/openchami/chamicore-power/internal/engine"
 	"git.cscs.ch/openchami/chamicore-power/internal/server"
+	powersmd "git.cscs.ch/openchami/chamicore-power/internal/smd"
 	"git.cscs.ch/openchami/chamicore-power/internal/store"
 	powersync "git.cscs.ch/openchami/chamicore-power/internal/sync"
 	smdclient "git.cscs.ch/openchami/chamicore-smd/pkg/client"
@@ -102,6 +105,38 @@ func main() {
 		Token:   cfg.InternalToken,
 	})
 
+	if strings.TrimSpace(cfg.NATSURL) != "" {
+		publisher, publisherErr := nats.NewPublisher(nats.Config{
+			URL:  cfg.NATSURL,
+			Name: "chamicore-power-outbox-relay",
+			Stream: nats.StreamConfig{
+				Name:     cfg.NATSStream,
+				Subjects: []string{"chamicore.power.>"},
+			},
+		})
+		if publisherErr != nil {
+			logger.Warn().Err(publisherErr).Str("nats_url", cfg.NATSURL).Msg("outbox relay disabled: failed to initialize NATS publisher")
+		} else {
+			defer func() {
+				if closeErr := publisher.Close(); closeErr != nil {
+					logger.Error().Err(closeErr).Msg("failed to close NATS publisher")
+				}
+			}()
+
+			relay, relayErr := outbox.NewRelay(db, publisher, outbox.Config{})
+			if relayErr != nil {
+				logger.Warn().Err(relayErr).Msg("outbox relay disabled: failed to initialize relay")
+			} else {
+				go func() {
+					if runErr := relay.Run(ctx); runErr != nil {
+						logger.Error().Err(runErr).Msg("outbox relay stopped with error")
+					}
+				}()
+				logger.Info().Str("nats_url", cfg.NATSURL).Str("stream", cfg.NATSStream).Msg("outbox relay started")
+			}
+		}
+	}
+
 	mappingSync := powersync.New(st, smd, powersync.Config{
 		Interval:            cfg.MappingSyncInterval,
 		SyncOnStartup:       cfg.MappingSyncOnStartup,
@@ -109,6 +144,7 @@ func main() {
 	}, logger.With().Str("component", "mapping-sync").Logger())
 	go mappingSync.Run(ctx)
 
+	stateUpdater := powersmd.NewUpdater(smd)
 	runner := engine.New(st, engine.NoopExecutor{}, engine.ExpectedStateReader{}, engine.Config{
 		GlobalConcurrency:  cfg.GlobalConcurrency,
 		PerBMCConcurrency:  cfg.PerBMCConcurrency,
@@ -118,7 +154,7 @@ func main() {
 		TransitionDeadline: cfg.TransitionDeadline,
 		VerificationWindow: cfg.VerificationWindow,
 		VerificationPoll:   cfg.VerificationPoll,
-	})
+	}, engine.WithNodeStateUpdater(stateUpdater))
 	runner.Start(ctx)
 
 	resolveGroupMembers := func(ctx context.Context, group string) ([]string, error) {

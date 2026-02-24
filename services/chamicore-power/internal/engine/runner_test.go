@@ -39,6 +39,17 @@ func (m *mockReader) ReadPowerState(ctx context.Context, req ExecutionRequest) (
 	return "On", nil
 }
 
+type mockStateUpdater struct {
+	updateNodePowerStateFn func(ctx context.Context, nodeID, powerState string) error
+}
+
+func (m *mockStateUpdater) UpdateNodePowerState(ctx context.Context, nodeID, powerState string) error {
+	if m.updateNodePowerStateFn != nil {
+		return m.updateNodePowerStateFn(ctx, nodeID, powerState)
+	}
+	return nil
+}
+
 type memoryStore struct {
 	mu sync.Mutex
 
@@ -561,6 +572,88 @@ func TestRunner_DryRunCreatesPlannedRecords(t *testing.T) {
 	}
 
 	assert.Equal(t, int32(0), calls.Load())
+}
+
+func TestRunner_SuccessfulTaskUpdatesSMDState(t *testing.T) {
+	store := newMemoryStore([]model.NodePowerMapping{{
+		NodeID: "node-1", BMCID: "bmc-1", Endpoint: "https://bmc-1", CredentialID: "cred-1",
+	}}, nil)
+
+	exec := &mockExecutor{executeFn: func(ctx context.Context, req ExecutionRequest) error {
+		return nil
+	}}
+	reader := &mockReader{readFn: func(ctx context.Context, req ExecutionRequest) (string, error) {
+		return "On", nil
+	}}
+
+	var updatedNodeID string
+	var updatedPowerState string
+	updater := &mockStateUpdater{
+		updateNodePowerStateFn: func(ctx context.Context, nodeID, powerState string) error {
+			updatedNodeID = nodeID
+			updatedPowerState = powerState
+			return nil
+		},
+	}
+
+	runner := New(store, exec, reader, Config{}, WithNodeStateUpdater(updater))
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.Start(runCtx)
+
+	transition, err := runner.StartTransition(context.Background(), StartRequest{
+		Operation: "On",
+		NodeIDs:   []string{"node-1"},
+	})
+	require.NoError(t, err)
+	require.True(t, store.waitForTerminal(transition.ID, time.Second))
+
+	assert.Equal(t, "node-1", updatedNodeID)
+	assert.Equal(t, "On", updatedPowerState)
+
+	tasks := store.tasksForTransition(transition.ID)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, TaskStateSucceeded, tasks[0].State)
+}
+
+func TestRunner_SMDUpdateFailureMarksTaskFailed(t *testing.T) {
+	store := newMemoryStore([]model.NodePowerMapping{{
+		NodeID: "node-1", BMCID: "bmc-1", Endpoint: "https://bmc-1", CredentialID: "cred-1",
+	}}, nil)
+
+	exec := &mockExecutor{executeFn: func(ctx context.Context, req ExecutionRequest) error {
+		return nil
+	}}
+	reader := &mockReader{readFn: func(ctx context.Context, req ExecutionRequest) (string, error) {
+		return "On", nil
+	}}
+	updater := &mockStateUpdater{
+		updateNodePowerStateFn: func(ctx context.Context, nodeID, powerState string) error {
+			return errors.New("smd patch failed")
+		},
+	}
+
+	runner := New(store, exec, reader, Config{}, WithNodeStateUpdater(updater))
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.Start(runCtx)
+
+	transition, err := runner.StartTransition(context.Background(), StartRequest{
+		Operation: "On",
+		NodeIDs:   []string{"node-1"},
+	})
+	require.NoError(t, err)
+	require.True(t, store.waitForTerminal(transition.ID, time.Second))
+
+	finalTransition := store.transition(transition.ID)
+	assert.Equal(t, TransitionStateFailed, finalTransition.State)
+	assert.Equal(t, 0, finalTransition.SuccessCount)
+	assert.Equal(t, 1, finalTransition.FailureCount)
+
+	tasks := store.tasksForTransition(transition.ID)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, TaskStateFailed, tasks[0].State)
+	assert.Contains(t, tasks[0].ErrorDetail, "updating SMD state")
 }
 
 func TestRunner_CancellationMarksTasksCanceled(t *testing.T) {

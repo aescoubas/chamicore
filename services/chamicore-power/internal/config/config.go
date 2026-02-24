@@ -13,6 +13,8 @@ const (
 	defaultListenAddr        = ":27775"
 	defaultDSN               = "postgres://chamicore:chamicore@localhost:5432/chamicore?sslmode=disable&search_path=power"
 	defaultSMDURL            = "http://localhost:27779"
+	defaultNATSURL           = "nats://localhost:4222"
+	defaultNATSStream        = "CHAMICORE_POWER"
 	defaultPrometheusAddr    = ":9090"
 	defaultSyncInterval      = 5 * time.Minute
 	defaultBulkMaxNodes      = 20
@@ -31,6 +33,8 @@ type Config struct {
 	ListenAddr     string
 	DBDSN          string
 	SMDURL         string
+	NATSURL        string
+	NATSStream     string
 	LogLevel       string
 	JWKSURL        string
 	InternalToken  string
@@ -61,6 +65,8 @@ func Load() (Config, error) {
 		ListenAddr:           envOrDefault("CHAMICORE_POWER_LISTEN_ADDR", defaultListenAddr),
 		DBDSN:                envOrDefault("CHAMICORE_POWER_DB_DSN", defaultDSN),
 		SMDURL:               envOrDefault("CHAMICORE_POWER_SMD_URL", defaultSMDURL),
+		NATSURL:              envOrDefault("CHAMICORE_NATS_URL", defaultNATSURL),
+		NATSStream:           strings.TrimSpace(envOrDefault("CHAMICORE_POWER_NATS_STREAM", defaultNATSStream)),
 		LogLevel:             strings.ToLower(envOrDefault("CHAMICORE_POWER_LOG_LEVEL", "info")),
 		DevMode:              envBool("CHAMICORE_POWER_DEV_MODE", false),
 		JWKSURL:              envOrDefault("CHAMICORE_POWER_JWKS_URL", ""),
@@ -84,6 +90,9 @@ func Load() (Config, error) {
 
 	if strings.TrimSpace(cfg.DBDSN) == "" {
 		return Config{}, fmt.Errorf("CHAMICORE_POWER_DB_DSN is required")
+	}
+	if strings.TrimSpace(cfg.NATSStream) == "" {
+		cfg.NATSStream = defaultNATSStream
 	}
 	if cfg.RetryBackoffMax < cfg.RetryBackoffBase {
 		cfg.RetryBackoffMax = cfg.RetryBackoffBase
