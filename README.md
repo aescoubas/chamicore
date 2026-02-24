@@ -106,12 +106,19 @@ See `quality/README.md` for details.
 - Git (with submodule support)
 - [k6](https://k6.io/) (for load testing, optional)
 
+## Documentation
+
+- [`docs/quickstart.md`](docs/quickstart.md) — Local stack bring-up, health checks, CLI setup, and end-to-end VM boot validation path.
+- [`docs/workflows.md`](docs/workflows.md) — Practical CLI workflows (groups, boot params, cloud-init payloads, discovery scans, auth admin, node provision/decommission).
+- [`quality/README.md`](quality/README.md) — Local quality gates, ratcheting thresholds, and release report workflow.
+
 ## Repository Structure
 
 ```
 chamicore/
   AGENTS.md               # AI-assisted development guide
   ARCHITECTURE/            # Architecture Decision Records (ADRs)
+  docs/                    # Operator and developer documentation
   tests/                   # Cross-service system integration tests
   services/                # Service submodules
     chamicore-smd/
