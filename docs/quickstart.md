@@ -54,7 +54,7 @@ curl -fsS http://localhost:8080/readiness
 Per-service probes through gateway passthrough:
 
 ```bash
-for svc in auth smd bss cloud-init discovery; do
+for svc in auth smd bss cloud-init discovery power; do
   curl -fsS "http://localhost:8080/_ops/${svc}/health" >/dev/null
   curl -fsS "http://localhost:8080/_ops/${svc}/readiness" >/dev/null
   echo "${svc}: ready"
@@ -70,6 +70,7 @@ done
 ./bin/chamicore cloud-init payloads list --limit 5
 ./bin/chamicore discovery target list --limit 5
 ./bin/chamicore auth policy list
+./bin/chamicore power transition list --limit 5
 ```
 
 ## 6. Optional: Login for Non-Dev Mode
@@ -89,7 +90,7 @@ export CHAMICORE_TOKEN=<jwt>
 
 ## 7. Optional: End-to-End VM Boot Validation
 
-Run the built-in verification script (creates a node, boot params, cloud-init payload, validates boot endpoints, then boots a libvirt VM):
+Run the built-in verification script (creates a node, boot params, cloud-init payload, validates boot endpoints, then boots a libvirt VM). `make compose-vm-up` also starts the shared Sushy emulator used by local power workflows:
 
 ```bash
 ./scripts/check-local-node-boot-vm.sh

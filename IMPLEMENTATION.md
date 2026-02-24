@@ -2800,7 +2800,7 @@ Add CLI workflow for power operations:
 - [x] CLI renders per-node statuses in table/json/yaml output modes
 - [x] CLI tests cover success, validation errors, and partial-failure rendering
 
-### P8.11: Deployment integration + Sushy for compose-vm-up [ ]
+### P8.11: Deployment integration + Sushy for compose-vm-up [x]
 
 **Depends on:** P8.4, P8.10
 **Repo:** chamicore-deploy, chamicore
@@ -2818,10 +2818,19 @@ Wire `chamicore-power` and one shared Sushy dynamic emulator into local deployme
 - one shared Sushy instance serves all local libvirt domains
 
 **Done when:**
-- [ ] Compose includes `chamicore-power` and `sushy-tools` services
-- [ ] Helm values/templates include `chamicore-power` (and optional Sushy toggle where applicable)
-- [ ] `make compose-vm-up` starts Sushy automatically
-- [ ] Local VM power operations succeed through `chamicore-power` API against Sushy/libvirt
+- [x] Compose includes `chamicore-power` and `sushy-tools` services
+- [x] Helm values/templates include `chamicore-power` (and optional Sushy toggle where applicable)
+- [x] `make compose-vm-up` starts Sushy automatically
+- [x] Local VM power operations succeed through `chamicore-power` API against Sushy/libvirt
+
+Validation evidence:
+1. `make -C shared/chamicore-deploy compose-config` succeeds with `chamicore-power`; `docker compose ... --profile vm config` includes `sushy-tools`.
+2. `make -C shared/chamicore-deploy helm-lint` and `make -C shared/chamicore-deploy helm-template` both succeed with new power/Sushy templates.
+3. Local E2E smoke passes:
+   - `make -C shared/chamicore-deploy compose-libvirt-up`
+   - SMD node/BMC mapping + `POST /power/v1/admin/mappings/sync`
+   - `chamicore power on --node <libvirt-system-id>` then `chamicore power transition wait <id>` returns `completed`/`succeeded`
+   - `sushy-tools` logs show `POST .../Actions/ComputerSystem.Reset` from `chamicore-power`.
 
 ### P8.12: Power service quality gates and end-to-end validation [ ]
 

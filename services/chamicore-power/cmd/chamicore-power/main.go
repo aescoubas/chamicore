@@ -20,6 +20,7 @@ import (
 	"git.cscs.ch/openchami/chamicore-lib/events/outbox"
 	baseclient "git.cscs.ch/openchami/chamicore-lib/httputil/client"
 	"git.cscs.ch/openchami/chamicore-lib/otel"
+	sharedredfish "git.cscs.ch/openchami/chamicore-lib/redfish"
 	"git.cscs.ch/openchami/chamicore-power/api"
 	"git.cscs.ch/openchami/chamicore-power/internal/config"
 	"git.cscs.ch/openchami/chamicore-power/internal/engine"
@@ -145,7 +146,14 @@ func main() {
 	go mappingSync.Run(ctx)
 
 	stateUpdater := powersmd.NewUpdater(smd)
-	runner := engine.New(st, engine.NoopExecutor{}, engine.ExpectedStateReader{}, engine.Config{
+	systemResolver := engine.NewSystemPathResolver()
+	// Local Sushy/libvirt development uses unauthenticated Redfish.
+	// Auth-backed credential resolution is wired as a follow-up phase.
+	credResolver := engine.EmptyCredentialResolver{}
+	redfishConfig := sharedredfish.Config{MaxAttempts: 1}
+	actionExecutor := engine.NewRedfishExecutor(redfishConfig, credResolver, systemResolver)
+	powerStateReader := engine.NewRedfishStateReader(redfishConfig, credResolver, systemResolver)
+	runner := engine.New(st, actionExecutor, powerStateReader, engine.Config{
 		GlobalConcurrency:  cfg.GlobalConcurrency,
 		PerBMCConcurrency:  cfg.PerBMCConcurrency,
 		RetryAttempts:      cfg.RetryAttempts,
