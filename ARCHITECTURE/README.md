@@ -40,3 +40,4 @@ All ADRs follow the template in [TEMPLATE.md](TEMPLATE.md). Each ADR has:
 | [ADR-014](ADR-014-boot-path-data-flow.md) | Boot-Path Data Flow and Service Self-Sufficiency | Accepted | 2026-02-18 |
 | [ADR-015](ADR-015-event-driven-architecture.md) | Event-Driven Architecture (NATS JetStream) | Proposed | 2026-02-18 |
 | [ADR-016](ADR-016-quality-engineering-policy.md) | Quality Engineering Policy and Database Drift Control | Accepted | 2026-02-24 |
+| [ADR-017](ADR-017-power-control-service.md) | Power Control Service (PCS-Compatible) and Shared Redfish Library | Accepted | 2026-02-24 |

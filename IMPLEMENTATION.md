@@ -2553,3 +2553,296 @@ Updated gap status:
 - Single-command deploy + libvirt VM boot workflow: **addressed in implementation**.
 - Missing Kea container in Docker Compose while `kea-sync` is enabled:
   **addressed in implementation**.
+
+---
+
+## Phase 8: Power Control (PCS-Compatible)
+
+Implement `chamicore-power` with OpenCHAMI PCS-style transitions/status APIs on
+top of Redfish, using a shared `chamicore-lib/redfish` package to avoid duplicating
+discovery driver logic.
+
+### P8.1: ADR + PCS-compatible API contract [ ]
+
+**Depends on:** none
+**Repo:** chamicore (umbrella), chamicore-power
+
+**Files:**
+- `ARCHITECTURE/ADR-017-power-control-service.md` (architecture decision)
+- `services/chamicore-power/api/openapi.yaml` (service contract)
+
+**Description:**
+Freeze V1 contract and semantics before implementation:
+- PCS-style endpoints: `POST/GET /transitions`, `GET/DELETE /transitions/{id}`, `GET /power-status`
+- convenience endpoints: `/actions/on|off|reboot|reset`
+- async job model with per-node status
+- bulk transition requests (default max 20, configurable)
+- operation set: `On`, `ForceOff`, `GracefulShutdown`, `GracefulRestart`, `ForceRestart`, `Nmi`
+
+**Done when:**
+- [x] ADR-017 records all approved decisions
+- [ ] `api/openapi.yaml` defines PCS-compatible endpoints and schemas
+- [ ] Operation enums and request/response shapes are consistent with ADR-017
+- [ ] API examples cover single-node, bulk, dry-run, and abort flows
+
+### P8.2: Shared Redfish package in chamicore-lib [~]
+
+**Depends on:** P8.1
+**Repo:** chamicore-lib
+
+**Files:**
+- `shared/chamicore-lib/redfish/client.go`
+- `shared/chamicore-lib/redfish/models.go`
+- `shared/chamicore-lib/redfish/client_test.go`
+
+**Description:**
+Extract reusable Redfish transport/auth/operations into a shared package:
+- endpoint normalization
+- basic auth handling via username/secret
+- GET system power state
+- POST reset action mapping for approved operations
+- TLS policy hooks (verify by default, explicit insecure override)
+
+**Done when:**
+- [x] Discovery and power can both consume the package without duplicated Redfish logic
+- [x] Package supports all V1 power operations and status reads
+- [x] Transport retries follow documented policy (retryable network/HTTP failures only)
+- [x] Unit tests cover success, timeout, auth failure, TLS/insecure override, malformed payloads
+- [ ] `go test -race ./...` and `golangci-lint run` pass in `shared/chamicore-lib`
+
+### P8.3: Refactor discovery Redfish driver to use shared package [~]
+
+**Depends on:** P8.2
+**Repo:** chamicore-discovery
+
+**Files:**
+- `services/chamicore-discovery/internal/driver/redfish/redfish.go`
+- `services/chamicore-discovery/internal/driver/redfish/redfish_test.go`
+
+**Description:**
+Rewire discovery Redfish driver internals to use `chamicore-lib/redfish` for transport
+and Redfish resource interactions while preserving existing discovery behavior.
+
+**Done when:**
+- [x] Discovery Redfish driver compiles and behavior remains backward compatible
+- [x] No direct duplicated HTTP/Redfish transport logic remains in discovery driver
+- [x] Existing discovery Redfish tests remain green (updated as needed)
+- [ ] `go test -race ./...` and `golangci-lint run` pass in `services/chamicore-discovery`
+
+### P8.4: chamicore-power service scaffold, config, and schema [ ]
+
+**Depends on:** P8.1
+**Repo:** chamicore-power
+
+**Files:**
+- `services/chamicore-power/cmd/chamicore-power/main.go`
+- `services/chamicore-power/internal/config/config.go`
+- `services/chamicore-power/internal/server/server.go`
+- `services/chamicore-power/internal/store/store.go`
+- `services/chamicore-power/migrations/postgres/000001_init.up.sql`
+- `services/chamicore-power/migrations/postgres/000001_init.down.sql`
+
+**Description:**
+Create new service skeleton following templates and conventions, including:
+- schema `power`
+- transition/job persistence tables
+- per-node task result table
+- BMC endpoint/credential mapping table
+- readiness/liveness/version/metrics endpoints
+
+**Done when:**
+- [ ] Service starts with migrations and health/readiness endpoints
+- [ ] Schema and migrations are reversible and idempotent
+- [ ] Config includes tunables for bulk max, retries, deadlines, and concurrency
+- [ ] JWT/internal-token middleware and scope gates are wired
+
+### P8.5: Topology mapping sync from SMD + credential binding model [ ]
+
+**Depends on:** P8.4
+**Repo:** chamicore-power
+
+**Files:**
+- `services/chamicore-power/internal/sync/smd_sync.go`
+- `services/chamicore-power/internal/store/postgres_mapping.go`
+- `services/chamicore-power/internal/model/mapping.go`
+
+**Description:**
+Implement SMD-derived local mapping:
+- node -> BMC resolution from SMD components/interfaces
+- per-BMC credential reference (`credential_id`)
+- missing-mapping fail-fast behavior
+- periodic sync with ETag and forced re-sync endpoint
+
+**Done when:**
+- [ ] Mapping cache is synchronized from SMD without direct DB coupling
+- [ ] Missing mapping yields per-node actionable error (no implicit discovery trigger)
+- [ ] Credential reference model is per-BMC (not per-node) in V1
+- [ ] Sync path has unit/integration tests for create/update/delete/missing edge cases
+
+### P8.6: Transition execution engine (async + verify + retry + concurrency) [ ]
+
+**Depends on:** P8.2, P8.5
+**Repo:** chamicore-power
+
+**Files:**
+- `services/chamicore-power/internal/engine/runner.go`
+- `services/chamicore-power/internal/engine/verify.go`
+- `services/chamicore-power/internal/engine/queue.go`
+- `services/chamicore-power/internal/engine/runner_test.go`
+
+**Description:**
+Build asynchronous task engine with:
+- global worker pool (default 20, configurable)
+- per-BMC serialization (default 1, configurable)
+- retry policy with exponential backoff + jitter
+- final-state verification polling window (default 90s, configurable)
+- dry-run path (resolve/validate without issuing Redfish actions)
+
+**Done when:**
+- [ ] Engine enforces configured global and per-BMC limits
+- [ ] Retry policy applies only to retryable failures
+- [ ] Verification marks final success/failure correctly per node
+- [ ] Dry-run transitions produce transition/task records with `planned` semantics
+- [ ] Unit tests cover cancellation, timeout, retries exhausted, and mixed bulk outcomes
+
+### P8.7: HTTP handlers for transitions, power-status, and convenience actions [ ]
+
+**Depends on:** P8.6
+**Repo:** chamicore-power
+
+**Files:**
+- `services/chamicore-power/internal/server/handlers_transitions.go`
+- `services/chamicore-power/internal/server/handlers_status.go`
+- `services/chamicore-power/internal/server/handlers_actions.go`
+- `services/chamicore-power/internal/server/handlers_test.go`
+
+**Description:**
+Implement API surface:
+- PCS-style transition/status endpoints
+- convenience action endpoints
+- group and list expansion support for bulk requests
+- per-node result payloads
+- transition abort endpoint
+
+**Done when:**
+- [ ] Endpoints match `api/openapi.yaml`
+- [ ] Requests reject unknown fields and invalid operation names
+- [ ] Bulk max is enforced with configurable default 20
+- [ ] Per-node statuses are returned for partial successes/failures
+- [ ] Scope enforcement:
+  - `read:power` on reads
+  - `write:power` on transitions/actions
+  - `admin:power` on admin endpoints
+
+### P8.8: SMD state updates + outbox event publishing [ ]
+
+**Depends on:** P8.6
+**Repo:** chamicore-power, chamicore-lib
+
+**Files:**
+- `services/chamicore-power/internal/smd/update.go`
+- `services/chamicore-power/internal/store/postgres_transition.go`
+- `services/chamicore-power/migrations/postgres/00000*_outbox.up.sql`
+- `shared/chamicore-lib/events/*` (reuse only; no breaking changes)
+
+**Description:**
+On successful verified power operation:
+- patch corresponding SMD component state
+- write transition events to outbox
+- publish to NATS through relay
+
+**Done when:**
+- [ ] Successful transition updates SMD state (`Ready`/`Off` as applicable)
+- [ ] Transition lifecycle and per-node result events are published via outbox relay
+- [ ] Service degrades gracefully if NATS is unavailable (no data loss)
+- [ ] Integration tests validate end-to-end: transition -> SMD patch -> outbox -> NATS
+
+### P8.9: chamicore-power typed client SDK [ ]
+
+**Depends on:** P8.7
+**Repo:** chamicore-power
+
+**Files:**
+- `services/chamicore-power/pkg/types/*.go`
+- `services/chamicore-power/pkg/client/client.go`
+- `services/chamicore-power/pkg/client/client_test.go`
+
+**Description:**
+Add typed SDK used by CLI/UI/services for transition creation, status polling,
+abort, and power-status queries.
+
+**Done when:**
+- [ ] Client supports all V1 endpoints with typed request/response models
+- [ ] Retry and RFC 9457 parsing behavior matches shared HTTP client conventions
+- [ ] Tests cover headers, status mapping, and error surfaces
+
+### P8.10: CLI power command group + group operations [ ]
+
+**Depends on:** P8.9
+**Repo:** chamicore-cli
+
+**Files:**
+- `services/chamicore-cli/internal/power/power.go`
+- `services/chamicore-cli/internal/power/power_test.go`
+- `services/chamicore-cli/cmd/chamicore/main.go`
+
+**Description:**
+Add CLI workflow for power operations:
+- `chamicore power on|off|reboot|reset`
+- `chamicore power status`
+- `chamicore power transition list|get|abort|wait`
+- `--group <name>` expansion through SMD
+- `--dry-run` support
+
+**Done when:**
+- [ ] CLI supports node lists and SMD group-based targeting
+- [ ] CLI can submit transition, poll/wait completion, and abort
+- [ ] CLI renders per-node statuses in table/json/yaml output modes
+- [ ] CLI tests cover success, validation errors, and partial-failure rendering
+
+### P8.11: Deployment integration + Sushy for compose-vm-up [ ]
+
+**Depends on:** P8.4, P8.10
+**Repo:** chamicore-deploy, chamicore
+
+**Files:**
+- `shared/chamicore-deploy/docker-compose.yml`
+- `shared/chamicore-deploy/charts/chamicore/*`
+- `shared/chamicore-deploy/scripts/compose-libvirt-up.sh`
+- `shared/chamicore-deploy/scripts/compose-libvirt-down.sh`
+- `shared/chamicore-deploy/sushy/*` (new)
+
+**Description:**
+Wire `chamicore-power` and one shared Sushy dynamic emulator into local deployment:
+- `make compose-vm-up` starts Sushy + compose stack + libvirt VM flow
+- one shared Sushy instance serves all local libvirt domains
+
+**Done when:**
+- [ ] Compose includes `chamicore-power` and `sushy-tools` services
+- [ ] Helm values/templates include `chamicore-power` (and optional Sushy toggle where applicable)
+- [ ] `make compose-vm-up` starts Sushy automatically
+- [ ] Local VM power operations succeed through `chamicore-power` API against Sushy/libvirt
+
+### P8.12: Power service quality gates and end-to-end validation [ ]
+
+**Depends on:** P8.11
+**Repo:** chamicore-power, tests
+
+**Files:**
+- `services/chamicore-power/internal/**/*_test.go`
+- `services/chamicore-power/internal/**/*_integration_test.go`
+- `tests/smoke/*` (power smoke)
+- `docs/workflows.md` (power workflow additions)
+
+**Description:**
+Close V1 with full quality evidence:
+- unit/integration coverage
+- lint/race/shuffle stability
+- local end-to-end smoke with libvirt + Sushy
+
+**Done when:**
+- [ ] `go test -race ./...` passes in `services/chamicore-power`
+- [ ] `go test -tags integration ./...` passes in `services/chamicore-power`
+- [ ] `golangci-lint run` passes in `services/chamicore-power`
+- [ ] Coverage target is met per repository policy
+- [ ] Root smoke includes a passing power transition workflow
