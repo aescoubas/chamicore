@@ -7,6 +7,7 @@ require (
 	git.cscs.ch/openchami/chamicore-bss v0.0.0
 	git.cscs.ch/openchami/chamicore-cloud-init v0.0.0
 	git.cscs.ch/openchami/chamicore-lib v0.0.0
+	git.cscs.ch/openchami/chamicore-power v0.0.0
 	git.cscs.ch/openchami/chamicore-smd v0.0.0
 )
 
@@ -24,5 +25,7 @@ replace git.cscs.ch/openchami/chamicore-bss => ../services/chamicore-bss
 replace git.cscs.ch/openchami/chamicore-cloud-init => ../services/chamicore-cloud-init
 
 replace git.cscs.ch/openchami/chamicore-lib => ../shared/chamicore-lib
+
+replace git.cscs.ch/openchami/chamicore-power => ../services/chamicore-power
 
 replace git.cscs.ch/openchami/chamicore-smd => ../services/chamicore-smd

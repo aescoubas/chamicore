@@ -243,7 +243,7 @@ func (c *Client) ActionReset(
 // TriggerMappingSync requests an immediate sync of local power topology mappings.
 func (c *Client) TriggerMappingSync(ctx context.Context) (*httputil.Resource[types.MappingSyncTrigger], error) {
 	var result httputil.Resource[types.MappingSyncTrigger]
-	if err := c.client.Post(ctx, adminMappingSyncPath, nil, &result); err != nil {
+	if err := c.client.Post(ctx, adminMappingSyncPath, struct{}{}, &result); err != nil {
 		return nil, fmt.Errorf("triggering mapping sync: %w", err)
 	}
 	return &result, nil

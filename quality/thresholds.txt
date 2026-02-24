@@ -11,6 +11,7 @@ coverage services/chamicore-bss 67.0
 coverage services/chamicore-cli 62.0
 coverage services/chamicore-cloud-init 63.0
 coverage services/chamicore-discovery 58.0
+coverage services/chamicore-power 54.0
 coverage services/chamicore-kea-sync 80.0
 coverage services/chamicore-auth 81.0
 coverage shared/chamicore-lib 97.0

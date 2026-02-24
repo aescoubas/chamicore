@@ -2832,7 +2832,7 @@ Validation evidence:
    - `chamicore power on --node <libvirt-system-id>` then `chamicore power transition wait <id>` returns `completed`/`succeeded`
    - `sushy-tools` logs show `POST .../Actions/ComputerSystem.Reset` from `chamicore-power`.
 
-### P8.12: Power service quality gates and end-to-end validation [ ]
+### P8.12: Power service quality gates and end-to-end validation [x]
 
 **Depends on:** P8.11
 **Repo:** chamicore-power, tests
@@ -2850,8 +2850,15 @@ Close V1 with full quality evidence:
 - local end-to-end smoke with libvirt + Sushy
 
 **Done when:**
-- [ ] `go test -race ./...` passes in `services/chamicore-power`
-- [ ] `go test -tags integration ./...` passes in `services/chamicore-power`
-- [ ] `golangci-lint run` passes in `services/chamicore-power`
-- [ ] Coverage target is met per repository policy
-- [ ] Root smoke includes a passing power transition workflow
+- [x] `go test -race ./...` passes in `services/chamicore-power`
+- [x] `go test -tags integration ./...` passes in `services/chamicore-power`
+- [x] `golangci-lint run` passes in `services/chamicore-power`
+- [x] Coverage target is met per repository policy
+- [x] Root smoke includes a passing power transition workflow
+
+Validation evidence:
+1. `go test -race ./...` passes in `services/chamicore-power`.
+2. `go test -tags integration ./...` passes in `services/chamicore-power`.
+3. `golangci-lint run ./...` passes in `services/chamicore-power`.
+4. Coverage threshold policy now includes `services/chamicore-power` (`quality/thresholds.txt`), and `scripts/quality/check-coverage-thresholds.sh` validates it.
+5. Root smoke suite now includes a power transition workflow test in `tests/smoke/power_test.go`, and operational workflow docs include power commands in `docs/workflows.md`.

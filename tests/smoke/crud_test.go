@@ -37,6 +37,7 @@ func TestSmoke_CRUDHappyPath(t *testing.T) {
 		{name: "bss", baseURL: endpoints.bss},
 		{name: "cloud-init", baseURL: endpoints.cloudInit},
 		{name: "discovery", baseURL: endpoints.discovery},
+		{name: "power", baseURL: endpoints.power},
 	}, defaultHealthTimeout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

@@ -489,6 +489,12 @@ func TestTriggerMappingSync(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, adminMappingSyncPath, r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.Empty(t, payload)
+
 		respondJSON(w, http.StatusAccepted, httputil.Resource[types.MappingSyncTrigger]{
 			Kind:       "MappingSyncTrigger",
 			APIVersion: "power/v1",

@@ -230,3 +230,52 @@ Execute decommission:
 ```bash
 ./bin/chamicore node decommission --id node-demo-a
 ```
+
+## 7. Power Transitions and Status
+
+Create one BMC and one node relationship in SMD (required for topology sync):
+
+```bash
+BMC_ID=bmc-demo-a
+NODE_POWER_ID=node-power-demo-a
+
+./bin/chamicore smd components create --id "${BMC_ID}" --type BMC --state Ready --role Management
+./bin/chamicore smd components create --id "${NODE_POWER_ID}" --type Node --state Ready --role Compute --parent-id "${BMC_ID}"
+./bin/chamicore smd components interfaces create --component-id "${BMC_ID}" --mac 02:00:00:00:20:01 --ip-addrs '["127.0.0.1"]'
+```
+
+Trigger power mapping sync:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${CHAMICORE_INTERNAL_TOKEN}" \
+  http://localhost:8080/power/v1/admin/mappings/sync
+```
+
+Start a dry-run power-on transition and inspect it:
+
+```bash
+TRANSITION_ID="$(
+  ./bin/chamicore -o json power on --node "${NODE_POWER_ID}" --dry-run | jq -r '.transitionID'
+)"
+
+./bin/chamicore power transition get "${TRANSITION_ID}"
+./bin/chamicore power transition list --limit 20
+```
+
+Run status queries by node or group:
+
+```bash
+./bin/chamicore power status --node "${NODE_POWER_ID}"
+./bin/chamicore power on --group "${GROUP}" --dry-run
+```
+
+Run a non-default reset operation and wait for completion:
+
+```bash
+TRANSITION_RESET="$(
+  ./bin/chamicore -o json power reset --node "${NODE_POWER_ID}" --operation GracefulShutdown | jq -r '.transitionID'
+)"
+
+./bin/chamicore power transition wait "${TRANSITION_RESET}" --timeout 120s
+```
