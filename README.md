@@ -60,6 +60,11 @@ cd chamicore
 # Start the full stack (requires Docker)
 make compose-up
 
+# Optional: use the user-facing gateway endpoint for CLI
+export CHAMICORE_ENDPOINT=http://localhost:8080
+# export CHAMICORE_TOKEN=<jwt>
+# ./bin/chamicore smd components list --limit 5
+
 # Start the full stack and boot a libvirt VM (requires libvirt tooling)
 make compose-vm-up
 # Optional: use a libvirt network instead of user-mode networking
