@@ -249,7 +249,9 @@ Trigger power mapping sync:
 
 ```bash
 curl -fsS -X POST \
+  -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${CHAMICORE_INTERNAL_TOKEN}" \
+  -d '{}' \
   http://localhost:8080/power/v1/admin/mappings/sync
 ```
 
