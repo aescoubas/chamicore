@@ -1,0 +1,118 @@
+openapi: "3.0.3"
+info:
+  title: chamicore-power API
+  version: "power/v1"
+  description: Power transition APIs for nodes and groups.
+
+servers:
+  - url: http://localhost:27775
+
+tags:
+  - name: health
+  - name: transitions
+  - name: actions
+  - name: status
+  - name: admin
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Service alive
+  /readiness:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Service ready
+        "503":
+          description: Service not ready
+  /version:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Version info
+
+  /power/v1/transitions:
+    get:
+      tags: [transitions]
+      responses:
+        "200":
+          description: List transitions
+    post:
+      tags: [transitions]
+      responses:
+        "202":
+          description: Transition accepted
+
+  /power/v1/transitions/{id}:
+    get:
+      tags: [transitions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transition status
+    delete:
+      tags: [transitions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Transition abort accepted
+
+  /power/v1/power-status:
+    get:
+      tags: [status]
+      responses:
+        "200":
+          description: Power status
+
+  /power/v1/actions/on:
+    post:
+      tags: [actions]
+      responses:
+        "202":
+          description: Action accepted
+
+  /power/v1/actions/off:
+    post:
+      tags: [actions]
+      responses:
+        "202":
+          description: Action accepted
+
+  /power/v1/actions/reboot:
+    post:
+      tags: [actions]
+      responses:
+        "202":
+          description: Action accepted
+
+  /power/v1/actions/reset:
+    post:
+      tags: [actions]
+      responses:
+        "202":
+          description: Action accepted
+
+  /power/v1/admin/mappings/sync:
+    post:
+      tags: [admin]
+      responses:
+        "202":
+          description: Sync accepted

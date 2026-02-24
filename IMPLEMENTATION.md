@@ -2629,7 +2629,7 @@ and Redfish resource interactions while preserving existing discovery behavior.
 - [x] Existing discovery Redfish tests remain green (updated as needed)
 - [x] `go test -race ./...` and `golangci-lint run` pass in `services/chamicore-discovery`
 
-### P8.4: chamicore-power service scaffold, config, and schema [ ]
+### P8.4: chamicore-power service scaffold, config, and schema [x]
 
 **Depends on:** P8.1
 **Repo:** chamicore-power
@@ -2651,10 +2651,10 @@ Create new service skeleton following templates and conventions, including:
 - readiness/liveness/version/metrics endpoints
 
 **Done when:**
-- [ ] Service starts with migrations and health/readiness endpoints
-- [ ] Schema and migrations are reversible and idempotent
-- [ ] Config includes tunables for bulk max, retries, deadlines, and concurrency
-- [ ] JWT/internal-token middleware and scope gates are wired
+- [x] Service starts with migrations and health/readiness endpoints
+- [x] Schema and migrations are reversible and idempotent
+- [x] Config includes tunables for bulk max, retries, deadlines, and concurrency
+- [x] JWT/internal-token middleware and scope gates are wired
 
 ### P8.5: Topology mapping sync from SMD + credential binding model [ ]
 

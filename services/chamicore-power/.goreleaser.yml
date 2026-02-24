@@ -1,0 +1,60 @@
+version: 2
+
+project_name: chamicore-power
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: power
+    main: ./cmd/chamicore-power
+    binary: power
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+
+archives:
+  - id: power
+    builds:
+      - power
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - migrations/**/*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  gitlab:
+    owner: openchami
+    name: chamicore-power
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
