@@ -2757,7 +2757,7 @@ On successful verified power operation:
 - [x] Service degrades gracefully if NATS is unavailable (no data loss)
 - [x] Integration tests validate end-to-end: transition -> SMD patch -> outbox -> NATS
 
-### P8.9: chamicore-power typed client SDK [ ]
+### P8.9: chamicore-power typed client SDK [x]
 
 **Depends on:** P8.7
 **Repo:** chamicore-power
@@ -2772,9 +2772,9 @@ Add typed SDK used by CLI/UI/services for transition creation, status polling,
 abort, and power-status queries.
 
 **Done when:**
-- [ ] Client supports all V1 endpoints with typed request/response models
-- [ ] Retry and RFC 9457 parsing behavior matches shared HTTP client conventions
-- [ ] Tests cover headers, status mapping, and error surfaces
+- [x] Client supports all V1 endpoints with typed request/response models
+- [x] Retry and RFC 9457 parsing behavior matches shared HTTP client conventions
+- [x] Tests cover headers, status mapping, and error surfaces
 
 ### P8.10: CLI power command group + group operations [ ]
 
