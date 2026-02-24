@@ -140,7 +140,8 @@ create_resources() {
     --component-id "${NODE_ID}" \
     --role "${ROLE}" \
     --user-data "${USER_DATA}" \
-    --meta-data "${META_DATA}"
+    --meta-data "${META_DATA}" \
+    --upsert
 }
 
 validate_boot_path() {

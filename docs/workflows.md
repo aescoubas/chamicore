@@ -111,7 +111,8 @@ Create payload:
   --component-id "${NODE_A}" \
   --role Compute \
   --user-data $'#cloud-config\nhostname: node-demo-a\n' \
-  --meta-data '{"instance-id":"node-demo-a","local-hostname":"node-demo-a"}'
+  --meta-data '{"instance-id":"node-demo-a","local-hostname":"node-demo-a"}' \
+  --upsert
 ```
 
 Patch only user-data:
