@@ -31,6 +31,8 @@ var (
 	ErrRunnerNotStarted = errors.New("runner not started")
 	// ErrNoTargetNodes indicates no target node IDs were provided.
 	ErrNoTargetNodes = errors.New("at least one node is required")
+	// ErrTransitionNotFound indicates no active transition exists with the provided ID.
+	ErrTransitionNotFound = errors.New("transition not found")
 )
 
 // RetryableError wraps an error that should be retried by policy.
@@ -209,11 +211,14 @@ type transitionProgress struct {
 	executableTotal int
 	canceledCount   int
 	started         bool
+	aborted         bool
+	cancel          context.CancelFunc
 }
 
 type queuedTask struct {
 	operation    redfish.ResetOperation
 	transitionID string
+	executionCtx context.Context
 	task         Task
 }
 
@@ -391,11 +396,14 @@ func (r *Runner) StartTransition(ctx context.Context, req StartRequest) (Transit
 		}
 	}
 
+	transitionExecCtx, cancelTransition := context.WithCancel(r.runningContext())
+
 	r.progressMu.Lock()
 	r.progress[createdTransition.ID] = &transitionProgress{
 		transition:      createdTransition,
 		executableTotal: len(pendingTasks),
 		remaining:       len(pendingTasks),
+		cancel:          cancelTransition,
 	}
 	r.progressMu.Unlock()
 
@@ -403,13 +411,58 @@ func (r *Runner) StartTransition(ctx context.Context, req StartRequest) (Transit
 		if enqueueErr := r.queue.enqueue(ctx, queuedTask{
 			operation:    operation,
 			transitionID: createdTransition.ID,
+			executionCtx: transitionExecCtx,
 			task:         task,
 		}); enqueueErr != nil {
+			cancelTransition()
 			return Transition{}, fmt.Errorf("enqueueing transition task: %w", enqueueErr)
 		}
 	}
 
 	return createdTransition, nil
+}
+
+// AbortTransition requests cancellation for an active transition.
+func (r *Runner) AbortTransition(ctx context.Context, transitionID string) error {
+	id := strings.TrimSpace(transitionID)
+	if id == "" {
+		return ErrTransitionNotFound
+	}
+
+	var transitionToPersist Transition
+	persist := false
+
+	r.progressMu.Lock()
+	progress, ok := r.progress[id]
+	if !ok {
+		r.progressMu.Unlock()
+		return ErrTransitionNotFound
+	}
+
+	if progress.aborted {
+		r.progressMu.Unlock()
+		return nil
+	}
+
+	progress.aborted = true
+	if progress.cancel != nil {
+		progress.cancel()
+	}
+	now := r.cfg.now().UTC()
+	progress.transition.State = TransitionStateCanceled
+	progress.transition.UpdatedAt = now
+	transitionToPersist = progress.transition
+	persist = true
+	r.progressMu.Unlock()
+
+	if !persist {
+		return nil
+	}
+
+	if _, err := r.store.UpdateTransition(ctx, transitionToPersist); err != nil {
+		return fmt.Errorf("marking transition canceled: %w", err)
+	}
+	return nil
 }
 
 func (r *Runner) worker(ctx context.Context) {
@@ -430,7 +483,17 @@ func (r *Runner) executeTask(ctx context.Context, item queuedTask) {
 		return
 	}
 
+	baseExecCtx := item.executionCtx
+	if baseExecCtx == nil {
+		baseExecCtx = ctx
+	}
+
 	task := item.task
+	if execErr := baseExecCtx.Err(); execErr != nil {
+		r.completeTask(ctx, item.transitionID, task, 0, "", execErr)
+		return
+	}
+
 	startedAt := r.cfg.now().UTC()
 	task.State = TaskStateRunning
 	task.StartedAt = &startedAt
@@ -441,17 +504,17 @@ func (r *Runner) executeTask(ctx context.Context, item queuedTask) {
 		task = updatedTask
 	}
 
-	releaseBMC, err := r.acquireBMCLimiter(ctx, task.BMCID)
+	releaseBMC, err := r.acquireBMCLimiter(baseExecCtx, task.BMCID)
 	if err != nil {
 		r.completeTask(ctx, item.transitionID, task, 0, "", err)
 		return
 	}
 	defer releaseBMC()
 
-	execCtx := ctx
+	execCtx := baseExecCtx
 	cancelExec := func() {}
 	if r.cfg.transitionDeadline > 0 {
-		execCtx, cancelExec = context.WithTimeout(ctx, r.cfg.transitionDeadline)
+		execCtx, cancelExec = context.WithTimeout(baseExecCtx, r.cfg.transitionDeadline)
 	}
 	defer cancelExec()
 
@@ -568,6 +631,10 @@ func (r *Runner) markTransitionRunning(ctx context.Context, transitionID string)
 		r.progressMu.Unlock()
 		return fmt.Errorf("transition %q has no active progress", transitionID)
 	}
+	if progress.aborted {
+		r.progressMu.Unlock()
+		return nil
+	}
 	if !progress.started {
 		startedAt := r.cfg.now().UTC()
 		progress.started = true
@@ -617,6 +684,9 @@ func (r *Runner) recordTaskOutcome(ctx context.Context, transitionID, taskState 
 		progress.transition.CompletedAt = &completedAt
 		progress.transition.UpdatedAt = completedAt
 		progress.transition.State = finalTransitionState(progress)
+		if progress.cancel != nil {
+			progress.cancel()
+		}
 		transitionToPersist = progress.transition
 		delete(r.progress, transitionID)
 		persist = true
@@ -682,6 +752,15 @@ func (r *Runner) setRunningContext(ctx context.Context) {
 	r.runMu.Lock()
 	defer r.runMu.Unlock()
 	r.runningCtx = ctx
+}
+
+func (r *Runner) runningContext() context.Context {
+	r.runMu.RLock()
+	defer r.runMu.RUnlock()
+	if r.runningCtx == nil {
+		return context.Background()
+	}
+	return r.runningCtx
 }
 
 func (r *Runner) isRunning() bool {

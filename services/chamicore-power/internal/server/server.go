@@ -13,6 +13,7 @@ import (
 	"git.cscs.ch/openchami/chamicore-lib/httputil"
 	"git.cscs.ch/openchami/chamicore-lib/otel"
 	"git.cscs.ch/openchami/chamicore-power/internal/config"
+	"git.cscs.ch/openchami/chamicore-power/internal/engine"
 	"git.cscs.ch/openchami/chamicore-power/internal/store"
 )
 
@@ -23,16 +24,31 @@ type mappingSyncer interface {
 	IsReady() bool
 }
 
+type transitionRunner interface {
+	StartTransition(ctx context.Context, req engine.StartRequest) (engine.Transition, error)
+	AbortTransition(ctx context.Context, transitionID string) error
+}
+
+type transitionStore interface {
+	ListTransitions(ctx context.Context, limit, offset int) ([]engine.Transition, int, error)
+	GetTransition(ctx context.Context, id string) (engine.Transition, error)
+	ListTransitionTasks(ctx context.Context, transitionID string) ([]engine.Task, error)
+	ListLatestTransitionTasksByNode(ctx context.Context, nodeIDs []string) ([]engine.Task, error)
+}
+
 // Server wraps HTTP routes and dependencies.
 type Server struct {
-	store       store.Store
-	mappingSync mappingSyncer
-	cfg         config.Config
-	version     string
-	commit      string
-	buildDate   string
-	openapiSpec []byte
-	router      chi.Router
+	store               store.Store
+	transitionStore     transitionStore
+	transitionRunner    transitionRunner
+	resolveGroupMembers func(ctx context.Context, group string) ([]string, error)
+	mappingSync         mappingSyncer
+	cfg                 config.Config
+	version             string
+	commit              string
+	buildDate           string
+	openapiSpec         []byte
+	router              chi.Router
 }
 
 // Option configures server construction.
@@ -52,6 +68,20 @@ func WithMappingSyncer(syncer mappingSyncer) Option {
 	}
 }
 
+// WithTransitionRunner sets the async transition execution runner.
+func WithTransitionRunner(runner transitionRunner) Option {
+	return func(s *Server) {
+		s.transitionRunner = runner
+	}
+}
+
+// WithGroupMemberResolver configures a resolver for SMD group expansion.
+func WithGroupMemberResolver(fn func(ctx context.Context, group string) ([]string, error)) Option {
+	return func(s *Server) {
+		s.resolveGroupMembers = fn
+	}
+}
+
 // New constructs a power API server.
 func New(st store.Store, cfg config.Config, version, commit, buildDate string, opts ...Option) *Server {
 	s := &Server{
@@ -60,6 +90,9 @@ func New(st store.Store, cfg config.Config, version, commit, buildDate string, o
 		version:   version,
 		commit:    commit,
 		buildDate: buildDate,
+	}
+	if ts, ok := any(st).(transitionStore); ok {
+		s.transitionStore = ts
 	}
 	for _, opt := range opts {
 		opt(s)

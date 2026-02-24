@@ -2705,7 +2705,7 @@ Build asynchronous task engine with:
 - [x] Dry-run transitions produce transition/task records with `planned` semantics
 - [x] Unit tests cover cancellation, timeout, retries exhausted, and mixed bulk outcomes
 
-### P8.7: HTTP handlers for transitions, power-status, and convenience actions [ ]
+### P8.7: HTTP handlers for transitions, power-status, and convenience actions [x]
 
 **Depends on:** P8.6
 **Repo:** chamicore-power
@@ -2725,11 +2725,11 @@ Implement API surface:
 - transition abort endpoint
 
 **Done when:**
-- [ ] Endpoints match `api/openapi.yaml`
-- [ ] Requests reject unknown fields and invalid operation names
-- [ ] Bulk max is enforced with configurable default 20
-- [ ] Per-node statuses are returned for partial successes/failures
-- [ ] Scope enforcement:
+- [x] Endpoints match `api/openapi.yaml`
+- [x] Requests reject unknown fields and invalid operation names
+- [x] Bulk max is enforced with configurable default 20
+- [x] Per-node statuses are returned for partial successes/failures
+- [x] Scope enforcement:
   - `read:power` on reads
   - `write:power` on transitions/actions
   - `admin:power` on admin endpoints

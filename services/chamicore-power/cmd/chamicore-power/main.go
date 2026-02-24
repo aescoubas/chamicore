@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,9 +16,11 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"git.cscs.ch/openchami/chamicore-lib/dbutil"
+	baseclient "git.cscs.ch/openchami/chamicore-lib/httputil/client"
 	"git.cscs.ch/openchami/chamicore-lib/otel"
 	"git.cscs.ch/openchami/chamicore-power/api"
 	"git.cscs.ch/openchami/chamicore-power/internal/config"
+	"git.cscs.ch/openchami/chamicore-power/internal/engine"
 	"git.cscs.ch/openchami/chamicore-power/internal/server"
 	"git.cscs.ch/openchami/chamicore-power/internal/store"
 	powersync "git.cscs.ch/openchami/chamicore-power/internal/sync"
@@ -105,6 +109,36 @@ func main() {
 	}, logger.With().Str("component", "mapping-sync").Logger())
 	go mappingSync.Run(ctx)
 
+	runner := engine.New(st, engine.NoopExecutor{}, engine.ExpectedStateReader{}, engine.Config{
+		GlobalConcurrency:  cfg.GlobalConcurrency,
+		PerBMCConcurrency:  cfg.PerBMCConcurrency,
+		RetryAttempts:      cfg.RetryAttempts,
+		RetryBackoffBase:   cfg.RetryBackoffBase,
+		RetryBackoffMax:    cfg.RetryBackoffMax,
+		TransitionDeadline: cfg.TransitionDeadline,
+		VerificationWindow: cfg.VerificationWindow,
+		VerificationPoll:   cfg.VerificationPoll,
+	})
+	runner.Start(ctx)
+
+	resolveGroupMembers := func(ctx context.Context, group string) ([]string, error) {
+		groupName := strings.TrimSpace(group)
+		if groupName == "" {
+			return nil, fmt.Errorf("%w: group name is required", server.ErrGroupNotFound)
+		}
+
+		resource, err := smd.GetGroup(ctx, groupName)
+		if err != nil {
+			var apiErr *baseclient.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+				return nil, fmt.Errorf("%w: %s", server.ErrGroupNotFound, groupName)
+			}
+			return nil, err
+		}
+
+		return append([]string(nil), resource.Spec.Members...), nil
+	}
+
 	srv := server.New(
 		st,
 		cfg,
@@ -113,6 +147,8 @@ func main() {
 		buildDate,
 		server.WithOpenAPISpec(api.OpenAPISpec),
 		server.WithMappingSyncer(mappingSync),
+		server.WithTransitionRunner(runner),
+		server.WithGroupMemberResolver(resolveGroupMembers),
 	)
 
 	httpServer := &http.Server{

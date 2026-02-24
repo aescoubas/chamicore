@@ -650,3 +650,60 @@ func TestRunner_RetriesExhaustedMarksFailure(t *testing.T) {
 	assert.Equal(t, TaskStateFailed, tasks[0].State)
 	assert.Equal(t, 3, tasks[0].AttemptCount)
 }
+
+func TestRunner_AbortTransition_CancelsTasks(t *testing.T) {
+	store := newMemoryStore([]model.NodePowerMapping{
+		{NodeID: "node-1", BMCID: "bmc-1", Endpoint: "https://bmc-1", CredentialID: "cred-1"},
+		{NodeID: "node-2", BMCID: "bmc-2", Endpoint: "https://bmc-2", CredentialID: "cred-2"},
+	}, nil)
+
+	exec := &mockExecutor{executeFn: func(ctx context.Context, req ExecutionRequest) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	reader := &mockReader{readFn: func(ctx context.Context, req ExecutionRequest) (string, error) {
+		return "On", nil
+	}}
+
+	runner := New(store, exec, reader, Config{
+		GlobalConcurrency:  1,
+		PerBMCConcurrency:  1,
+		RetryAttempts:      1,
+		TransitionDeadline: 2 * time.Second,
+	})
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.Start(runCtx)
+
+	transition, err := runner.StartTransition(context.Background(), StartRequest{
+		Operation: "On",
+		NodeIDs:   []string{"node-1", "node-2"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, runner.AbortTransition(context.Background(), transition.ID))
+	require.Eventually(t, func() bool {
+		tasks := store.tasksForTransition(transition.ID)
+		if len(tasks) != 2 {
+			return false
+		}
+		for _, task := range tasks {
+			if task.State == TaskStatePending {
+				return false
+			}
+		}
+		finalTransition := store.transition(transition.ID)
+		return finalTransition.State == TransitionStateCanceled && finalTransition.FailureCount == 2
+	}, 2*time.Second, 10*time.Millisecond)
+
+	finalTransition := store.transition(transition.ID)
+	assert.Equal(t, TransitionStateCanceled, finalTransition.State)
+	assert.Equal(t, 0, finalTransition.SuccessCount)
+	assert.Equal(t, 2, finalTransition.FailureCount)
+
+	tasks := store.tasksForTransition(transition.ID)
+	require.Len(t, tasks, 2)
+	assert.Equal(t, TaskStateCanceled, tasks[0].State)
+	assert.Equal(t, TaskStateCanceled, tasks[1].State)
+}

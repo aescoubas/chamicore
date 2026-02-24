@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -135,13 +136,13 @@ func TestServer_PowerRoutesScopedInDevMode(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/power/v1/transitions", nil)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusNotImplemented, resp.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.Code)
 
-	req = httptest.NewRequest(http.MethodPost, "/power/v1/actions/on", http.NoBody)
+	req = httptest.NewRequest(http.MethodPost, "/power/v1/actions/on", bytes.NewBufferString(`{"nodes":["node-1"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp = httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusNotImplemented, resp.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.Code)
 
 	req = httptest.NewRequest(http.MethodPost, "/power/v1/admin/mappings/sync", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
