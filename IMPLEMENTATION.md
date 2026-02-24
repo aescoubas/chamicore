@@ -16,6 +16,8 @@ and `templates/service/` (code patterns) before implementing any task.
    exactly what "complete" means. Every criterion must be satisfied.
 4. **Follow the conventions** — see `AGENTS.md` for patterns, `templates/service/` for
    reference code, and the relevant ADR(s) for design rationale.
+   For quality gates and database drift controls, follow
+   [ADR-016](ARCHITECTURE/ADR-016-quality-engineering-policy.md).
 5. **Mark progress** — when you start a task, change `[ ]` to `[~]`. When all acceptance
    criteria are met, change `[~]` to `[x]` and commit.
 

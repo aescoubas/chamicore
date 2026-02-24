@@ -1,0 +1,10 @@
+# Mutation score input file for `make quality-mutation`.
+# Format:
+#   <scope> <score-percent>
+#
+# Copy this file to `quality/mutation-scores.txt` and update values.
+
+services/chamicore-smd/internal/store 80.0
+services/chamicore-bss/internal/store 80.0
+services/chamicore-auth/internal/store 80.0
+services/chamicore-discovery/internal/store 80.0

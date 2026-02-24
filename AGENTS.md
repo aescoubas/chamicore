@@ -211,7 +211,8 @@ chamicore-<service>/
 - Migrations must be applied as part of integration test setup.
 
 > For system integration tests, smoke tests, and load/performance tests, see
-> [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md) and `tests/` directory.
+> [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md),
+> [ADR-016](ARCHITECTURE/ADR-016-quality-engineering-policy.md), and `tests/` directory.
 
 ### Configuration
 
@@ -514,6 +515,9 @@ make test-system       # Run cross-service system tests (starts full stack)
 make test-smoke        # Run smoke tests against live stack
 make test-load         # Run full load/performance tests (requires k6)
 make lint              # Lint all services
+make quality-gate      # Full local quality gate (lint/tests/coverage/integration)
+make quality-db        # DB migration/schema/query-plan quality gate
+make release-gate      # Release gate + signed quality report artifact
 make docker-build      # Build all Docker images
 make compose-up        # Start dev environment
 make compose-down      # Stop dev environment
@@ -559,6 +563,7 @@ Hierarchy: `parent_id` foreign key. Xnames accepted for compatibility.
 | chamicore-smd | [ADR-010](ARCHITECTURE/ADR-010-component-identifiers.md), upstream `OpenCHAMI/smd` |
 | chamicore-discovery | [ADR-013](ARCHITECTURE/ADR-013-dedicated-discovery-service.md) |
 | chamicore-kea-sync | Kea Control Agent API docs, [ADR-015](ARCHITECTURE/ADR-015-event-driven-architecture.md) |
+| Any quality/testing/database drift work | [ADR-012](ARCHITECTURE/ADR-012-performance-testing-strategy.md), [ADR-016](ARCHITECTURE/ADR-016-quality-engineering-policy.md) |
 | Any handler | `templates/service/internal/server/handlers.go` |
 | Any store | `templates/service/internal/store/postgres.go` |
 | Any client SDK | `templates/service/pkg/client/client.go` |
@@ -680,6 +685,8 @@ err = s.db.QueryRowContext(ctx, query, args...).Scan(&c.ID, &c.Type)
 - [ ] All error paths and validation edge cases tested
 - [ ] HTTP handlers tested via `httptest`
 - [ ] Store has integration tests with `//go:build integration` tag
+- [ ] No known flaky tests (shuffle/repeat strategy where relevant)
+- [ ] Test expectations comply with ADR-016 quality gates
 
 #### API Compliance
 - [ ] Endpoints match `api/openapi.yaml` (methods, paths, status codes, response shapes)
@@ -691,6 +698,7 @@ err = s.db.QueryRowContext(ctx, query, args...).Scan(&c.ID, &c.Type)
 - [ ] Migrations: both `.up.sql` and `.down.sql`, correct schema name
 - [ ] Tables have `created_at`/`updated_at` TIMESTAMPTZ, `search_path` set
 - [ ] Squirrel queries with dollar placeholders, `*Context` methods
+- [ ] Migration and schema checks align with ADR-016 drift controls
 
 #### Security
 - [ ] JWT middleware on all API routes, scope enforcement on mutations

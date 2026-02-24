@@ -9,12 +9,16 @@ K6_PROMETHEUS_RW_SERVER_URL ?= http://127.0.0.1:9090/api/v1/write
 COVER_MIN ?= 100.0
 GOLANGCI_LINT_VERSION ?= v1.64.8
 GOLANGCI_LINT_CMD ?= go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+QUALITY_THRESHOLDS_FILE ?= quality/thresholds.txt
+QUALITY_MUTATION_SCORES ?= quality/mutation-scores.txt
+QUALITY_REQUIRE_MUTATION ?= 0
+QUALITY_REPORT_DIR ?= quality/reports
 
 SERVICE_DIRS := $(addprefix services/,$(SERVICES))
 SHARED_DIRS  := $(addprefix shared/,$(SHARED))
 ALL_DIRS     := $(SERVICE_DIRS) $(SHARED_DIRS)
 
-.PHONY: help init update build test test-cover test-integration test-system test-smoke test-load test-load-quick test-all lint docker-build compose-up compose-down compose-vm-up compose-vm-down clean
+.PHONY: help init update build test test-shuffle test-cover test-integration test-system test-smoke test-load test-load-quick test-all lint quality-ratchet quality-coverage quality-mutation quality-gate quality-db release-gate docker-build compose-up compose-down compose-vm-up compose-vm-down clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -45,6 +49,15 @@ test: ## Run tests for all services and shared libraries
 		if [ -f "$$dir/go.mod" ]; then \
 			echo "==> Testing $$dir"; \
 			cd $$dir && go test -race -count=1 ./... && \
+			cd - > /dev/null || exit 1; \
+		fi; \
+	done
+
+test-shuffle: ## Run tests with package shuffle enabled
+	@for dir in $(ALL_DIRS); do \
+		if [ -f "$$dir/go.mod" ]; then \
+			echo "==> Shuffled tests for $$dir"; \
+			cd $$dir && go test -shuffle=on -count=1 ./... && \
 			cd - > /dev/null || exit 1; \
 		fi; \
 	done
@@ -107,6 +120,35 @@ lint: ## Lint all services and shared libraries
 			cd - > /dev/null || exit 1; \
 		fi; \
 	done
+
+quality-ratchet: ## Ensure quality thresholds only ratchet upward
+	./scripts/quality/check-threshold-ratchet.sh $(QUALITY_THRESHOLDS_FILE)
+
+quality-coverage: ## Enforce per-module coverage thresholds from quality config
+	./scripts/quality/check-coverage-thresholds.sh $(QUALITY_THRESHOLDS_FILE)
+
+quality-mutation: ## Enforce mutation thresholds from quality config
+	./scripts/quality/check-mutation-thresholds.sh $(QUALITY_THRESHOLDS_FILE) $(QUALITY_MUTATION_SCORES) $(QUALITY_REQUIRE_MUTATION)
+
+quality-gate: ## Run local quality gate (ratchet, lint, race, shuffle, coverage, integration)
+	@$(MAKE) quality-ratchet
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) test-shuffle
+	@$(MAKE) test-cover
+	@$(MAKE) quality-coverage
+	@$(MAKE) test-integration
+
+quality-db: ## Validate migration up/down/up, schema expectations, and query plans
+	./scripts/quality-db.sh
+
+release-gate: ## Run release gate and emit signed report (set RELEASE_TAG=vX.Y.Z to tag)
+	QUALITY_THRESHOLDS_FILE=$(QUALITY_THRESHOLDS_FILE) \
+	QUALITY_MUTATION_SCORES=$(QUALITY_MUTATION_SCORES) \
+	QUALITY_REQUIRE_MUTATION=$(QUALITY_REQUIRE_MUTATION) \
+	QUALITY_REPORT_DIR=$(QUALITY_REPORT_DIR) \
+	RELEASE_TAG=$(RELEASE_TAG) \
+	./scripts/release-gate.sh
 
 ## --- Docker ---
 

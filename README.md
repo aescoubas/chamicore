@@ -79,6 +79,23 @@ make compose-down
 make compose-vm-down
 ```
 
+### Quality Gates (CLI-first)
+
+```bash
+# Full local quality gate
+make quality-gate
+
+# Database migration/schema/query-plan gate
+make quality-db
+
+# Release gate + signed quality report
+make release-gate
+# Optional tag after successful gate:
+# RELEASE_TAG=v0.1.0 make release-gate
+```
+
+See `quality/README.md` for details.
+
 ### Prerequisites
 
 - Go 1.24+

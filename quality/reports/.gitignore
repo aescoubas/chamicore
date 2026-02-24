@@ -1,0 +1,3 @@
+# Keep directory in git, ignore generated quality reports.
+*
+!.gitignore

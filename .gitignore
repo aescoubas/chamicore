@@ -52,3 +52,6 @@ coverage.html
 
 # Misc
 *.log
+
+# Quality artifacts
+quality/mutation-scores.txt

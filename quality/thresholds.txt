@@ -1,0 +1,21 @@
+# Quality threshold policy (ratcheted; values may only increase).
+# Format:
+#   <metric> <scope> <threshold-percent>
+#
+# Metrics:
+#   coverage: Go module total coverage threshold
+#   mutation: mutation score threshold for a critical package scope
+
+coverage services/chamicore-smd 56.0
+coverage services/chamicore-bss 67.0
+coverage services/chamicore-cli 62.0
+coverage services/chamicore-cloud-init 63.0
+coverage services/chamicore-discovery 58.0
+coverage services/chamicore-kea-sync 80.0
+coverage services/chamicore-auth 81.0
+coverage shared/chamicore-lib 97.0
+
+mutation services/chamicore-smd/internal/store 80.0
+mutation services/chamicore-bss/internal/store 80.0
+mutation services/chamicore-auth/internal/store 80.0
+mutation services/chamicore-discovery/internal/store 80.0
