@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,9 +16,17 @@ import (
 	"git.cscs.ch/openchami/chamicore-power/internal/store"
 )
 
+var errInitialMappingSyncPending = errors.New("initial mapping sync has not completed")
+
+type mappingSyncer interface {
+	Trigger(ctx context.Context) error
+	IsReady() bool
+}
+
 // Server wraps HTTP routes and dependencies.
 type Server struct {
 	store       store.Store
+	mappingSync mappingSyncer
 	cfg         config.Config
 	version     string
 	commit      string
@@ -33,6 +42,13 @@ type Option func(*Server)
 func WithOpenAPISpec(spec []byte) Option {
 	return func(s *Server) {
 		s.openapiSpec = spec
+	}
+}
+
+// WithMappingSyncer sets the background mapping sync controller.
+func WithMappingSyncer(syncer mappingSyncer) Option {
+	return func(s *Server) {
+		s.mappingSync = syncer
 	}
 }
 
@@ -75,7 +91,13 @@ func (s *Server) buildRouter() chi.Router {
 	r.Group(func(r chi.Router) {
 		r.Method(http.MethodGet, "/health", httputil.HealthHandler())
 		r.Method(http.MethodGet, "/readiness", httputil.ReadinessHandler(func() error {
-			return s.store.Ping(context.Background())
+			if err := s.store.Ping(context.Background()); err != nil {
+				return err
+			}
+			if s.mappingSync != nil && !s.mappingSync.IsReady() {
+				return errInitialMappingSyncPending
+			}
+			return nil
 		}))
 		r.Method(http.MethodGet, "/version", httputil.VersionHandler(s.version, s.commit, s.buildDate))
 		if s.cfg.MetricsEnabled {

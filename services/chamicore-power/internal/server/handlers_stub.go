@@ -43,10 +43,6 @@ func (s *Server) handleActionReset(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondProblem(w, r, http.StatusNotImplemented, "reset action is not implemented yet")
 }
 
-func (s *Server) handleAdminSyncMappings(w http.ResponseWriter, r *http.Request) {
-	httputil.RespondProblem(w, r, http.StatusNotImplemented, "mapping sync is not implemented yet")
-}
-
 func requireAnyScope(scopes ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

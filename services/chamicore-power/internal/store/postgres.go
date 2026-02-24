@@ -4,16 +4,22 @@ package store
 import (
 	"context"
 	"database/sql"
+
+	sq "github.com/Masterminds/squirrel"
 )
 
 // PostgresStore implements Store using PostgreSQL.
 type PostgresStore struct {
 	db *sql.DB
+	sb sq.StatementBuilderType
 }
 
 // NewPostgresStore creates a new store instance.
 func NewPostgresStore(db *sql.DB) *PostgresStore {
-	return &PostgresStore{db: db}
+	return &PostgresStore{
+		db: db,
+		sb: sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+	}
 }
 
 // Ping checks database connectivity.

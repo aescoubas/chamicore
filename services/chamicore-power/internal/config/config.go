@@ -12,7 +12,9 @@ import (
 const (
 	defaultListenAddr        = ":27775"
 	defaultDSN               = "postgres://chamicore:chamicore@localhost:5432/chamicore?sslmode=disable&search_path=power"
+	defaultSMDURL            = "http://localhost:27779"
 	defaultPrometheusAddr    = ":9090"
+	defaultSyncInterval      = 5 * time.Minute
 	defaultBulkMaxNodes      = 20
 	defaultRetryAttempts     = 3
 	defaultRetryBackoffBase  = 250 * time.Millisecond
@@ -28,6 +30,7 @@ const (
 type Config struct {
 	ListenAddr     string
 	DBDSN          string
+	SMDURL         string
 	LogLevel       string
 	JWKSURL        string
 	InternalToken  string
@@ -36,6 +39,10 @@ type Config struct {
 	DevMode        bool
 	MetricsEnabled bool
 	TracesEnabled  bool
+
+	MappingSyncInterval  time.Duration
+	MappingSyncOnStartup bool
+	DefaultCredentialID  string
 
 	BulkMaxNodes       int
 	RetryAttempts      int
@@ -51,24 +58,28 @@ type Config struct {
 // Load reads configuration from environment variables.
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddr:         envOrDefault("CHAMICORE_POWER_LISTEN_ADDR", defaultListenAddr),
-		DBDSN:              envOrDefault("CHAMICORE_POWER_DB_DSN", defaultDSN),
-		LogLevel:           strings.ToLower(envOrDefault("CHAMICORE_POWER_LOG_LEVEL", "info")),
-		DevMode:            envBool("CHAMICORE_POWER_DEV_MODE", false),
-		JWKSURL:            envOrDefault("CHAMICORE_POWER_JWKS_URL", ""),
-		InternalToken:      envOrDefault("CHAMICORE_INTERNAL_TOKEN", ""),
-		MetricsEnabled:     envBool("CHAMICORE_POWER_METRICS_ENABLED", true),
-		TracesEnabled:      envBool("CHAMICORE_POWER_TRACES_ENABLED", false),
-		PrometheusAddr:     envOrDefault("CHAMICORE_POWER_PROMETHEUS_ADDR", defaultPrometheusAddr),
-		BulkMaxNodes:       envPositiveInt("CHAMICORE_POWER_BULK_MAX_NODES", defaultBulkMaxNodes),
-		RetryAttempts:      envPositiveInt("CHAMICORE_POWER_RETRY_ATTEMPTS", defaultRetryAttempts),
-		RetryBackoffBase:   envPositiveDuration("CHAMICORE_POWER_RETRY_BACKOFF_BASE", defaultRetryBackoffBase),
-		RetryBackoffMax:    envPositiveDuration("CHAMICORE_POWER_RETRY_BACKOFF_MAX", defaultRetryBackoffMax),
-		TransitionDeadline: envPositiveDuration("CHAMICORE_POWER_TRANSITION_DEADLINE", defaultTransitionTimeout),
-		VerificationWindow: envPositiveDuration("CHAMICORE_POWER_VERIFICATION_WINDOW", defaultVerifyWindow),
-		VerificationPoll:   envPositiveDuration("CHAMICORE_POWER_VERIFICATION_POLL_INTERVAL", defaultVerifyPoll),
-		GlobalConcurrency:  envPositiveInt("CHAMICORE_POWER_GLOBAL_CONCURRENCY", defaultGlobalWorkers),
-		PerBMCConcurrency:  envPositiveInt("CHAMICORE_POWER_PER_BMC_CONCURRENCY", defaultPerBMCWorkers),
+		ListenAddr:           envOrDefault("CHAMICORE_POWER_LISTEN_ADDR", defaultListenAddr),
+		DBDSN:                envOrDefault("CHAMICORE_POWER_DB_DSN", defaultDSN),
+		SMDURL:               envOrDefault("CHAMICORE_POWER_SMD_URL", defaultSMDURL),
+		LogLevel:             strings.ToLower(envOrDefault("CHAMICORE_POWER_LOG_LEVEL", "info")),
+		DevMode:              envBool("CHAMICORE_POWER_DEV_MODE", false),
+		JWKSURL:              envOrDefault("CHAMICORE_POWER_JWKS_URL", ""),
+		InternalToken:        envOrDefault("CHAMICORE_INTERNAL_TOKEN", ""),
+		MetricsEnabled:       envBool("CHAMICORE_POWER_METRICS_ENABLED", true),
+		TracesEnabled:        envBool("CHAMICORE_POWER_TRACES_ENABLED", false),
+		PrometheusAddr:       envOrDefault("CHAMICORE_POWER_PROMETHEUS_ADDR", defaultPrometheusAddr),
+		MappingSyncInterval:  envPositiveDuration("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", defaultSyncInterval),
+		MappingSyncOnStartup: envBool("CHAMICORE_POWER_MAPPING_SYNC_ON_STARTUP", true),
+		DefaultCredentialID:  strings.TrimSpace(envOrDefault("CHAMICORE_POWER_DEFAULT_CREDENTIAL_ID", "")),
+		BulkMaxNodes:         envPositiveInt("CHAMICORE_POWER_BULK_MAX_NODES", defaultBulkMaxNodes),
+		RetryAttempts:        envPositiveInt("CHAMICORE_POWER_RETRY_ATTEMPTS", defaultRetryAttempts),
+		RetryBackoffBase:     envPositiveDuration("CHAMICORE_POWER_RETRY_BACKOFF_BASE", defaultRetryBackoffBase),
+		RetryBackoffMax:      envPositiveDuration("CHAMICORE_POWER_RETRY_BACKOFF_MAX", defaultRetryBackoffMax),
+		TransitionDeadline:   envPositiveDuration("CHAMICORE_POWER_TRANSITION_DEADLINE", defaultTransitionTimeout),
+		VerificationWindow:   envPositiveDuration("CHAMICORE_POWER_VERIFICATION_WINDOW", defaultVerifyWindow),
+		VerificationPoll:     envPositiveDuration("CHAMICORE_POWER_VERIFICATION_POLL_INTERVAL", defaultVerifyPoll),
+		GlobalConcurrency:    envPositiveInt("CHAMICORE_POWER_GLOBAL_CONCURRENCY", defaultGlobalWorkers),
+		PerBMCConcurrency:    envPositiveInt("CHAMICORE_POWER_PER_BMC_CONCURRENCY", defaultPerBMCWorkers),
 	}
 
 	if strings.TrimSpace(cfg.DBDSN) == "" {

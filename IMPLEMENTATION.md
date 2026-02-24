@@ -2656,7 +2656,7 @@ Create new service skeleton following templates and conventions, including:
 - [x] Config includes tunables for bulk max, retries, deadlines, and concurrency
 - [x] JWT/internal-token middleware and scope gates are wired
 
-### P8.5: Topology mapping sync from SMD + credential binding model [ ]
+### P8.5: Topology mapping sync from SMD + credential binding model [x]
 
 **Depends on:** P8.4
 **Repo:** chamicore-power
@@ -2674,10 +2674,10 @@ Implement SMD-derived local mapping:
 - periodic sync with ETag and forced re-sync endpoint
 
 **Done when:**
-- [ ] Mapping cache is synchronized from SMD without direct DB coupling
-- [ ] Missing mapping yields per-node actionable error (no implicit discovery trigger)
-- [ ] Credential reference model is per-BMC (not per-node) in V1
-- [ ] Sync path has unit/integration tests for create/update/delete/missing edge cases
+- [x] Mapping cache is synchronized from SMD without direct DB coupling
+- [x] Missing mapping yields per-node actionable error (no implicit discovery trigger)
+- [x] Credential reference model is per-BMC (not per-node) in V1
+- [x] Sync path has unit/integration tests for create/update/delete/missing edge cases
 
 ### P8.6: Transition execution engine (async + verify + retry + concurrency) [ ]
 

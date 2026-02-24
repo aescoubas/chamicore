@@ -19,6 +19,8 @@ import (
 	"git.cscs.ch/openchami/chamicore-power/internal/config"
 	"git.cscs.ch/openchami/chamicore-power/internal/server"
 	"git.cscs.ch/openchami/chamicore-power/internal/store"
+	powersync "git.cscs.ch/openchami/chamicore-power/internal/sync"
+	smdclient "git.cscs.ch/openchami/chamicore-smd/pkg/client"
 )
 
 var (
@@ -91,7 +93,27 @@ func main() {
 	logger.Info().Uint("version", result.Version).Bool("dirty", result.Dirty).Msg("database migration complete")
 
 	st := store.NewPostgresStore(db)
-	srv := server.New(st, cfg, version, commit, buildDate, server.WithOpenAPISpec(api.OpenAPISpec))
+	smd := smdclient.New(smdclient.Config{
+		BaseURL: cfg.SMDURL,
+		Token:   cfg.InternalToken,
+	})
+
+	mappingSync := powersync.New(st, smd, powersync.Config{
+		Interval:            cfg.MappingSyncInterval,
+		SyncOnStartup:       cfg.MappingSyncOnStartup,
+		DefaultCredentialID: cfg.DefaultCredentialID,
+	}, logger.With().Str("component", "mapping-sync").Logger())
+	go mappingSync.Run(ctx)
+
+	srv := server.New(
+		st,
+		cfg,
+		version,
+		commit,
+		buildDate,
+		server.WithOpenAPISpec(api.OpenAPISpec),
+		server.WithMappingSyncer(mappingSync),
+	)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,

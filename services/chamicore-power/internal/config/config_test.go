@@ -11,6 +11,7 @@ import (
 func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_LISTEN_ADDR", "")
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "")
+	t.Setenv("CHAMICORE_POWER_SMD_URL", "")
 	t.Setenv("CHAMICORE_POWER_LOG_LEVEL", "")
 	t.Setenv("CHAMICORE_POWER_DEV_MODE", "")
 	t.Setenv("CHAMICORE_POWER_JWKS_URL", "")
@@ -18,6 +19,9 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_METRICS_ENABLED", "")
 	t.Setenv("CHAMICORE_POWER_TRACES_ENABLED", "")
 	t.Setenv("CHAMICORE_POWER_PROMETHEUS_ADDR", "")
+	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", "")
+	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_ON_STARTUP", "")
+	t.Setenv("CHAMICORE_POWER_DEFAULT_CREDENTIAL_ID", "")
 	t.Setenv("CHAMICORE_POWER_BULK_MAX_NODES", "")
 	t.Setenv("CHAMICORE_POWER_RETRY_ATTEMPTS", "")
 	t.Setenv("CHAMICORE_POWER_RETRY_BACKOFF_BASE", "")
@@ -33,8 +37,12 @@ func TestLoad_Defaults(t *testing.T) {
 
 	assert.Equal(t, defaultListenAddr, cfg.ListenAddr)
 	assert.Equal(t, defaultDSN, cfg.DBDSN)
+	assert.Equal(t, defaultSMDURL, cfg.SMDURL)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, defaultPrometheusAddr, cfg.PrometheusAddr)
+	assert.Equal(t, defaultSyncInterval, cfg.MappingSyncInterval)
+	assert.True(t, cfg.MappingSyncOnStartup)
+	assert.Empty(t, cfg.DefaultCredentialID)
 	assert.Equal(t, defaultBulkMaxNodes, cfg.BulkMaxNodes)
 	assert.Equal(t, defaultRetryAttempts, cfg.RetryAttempts)
 	assert.Equal(t, defaultRetryBackoffBase, cfg.RetryBackoffBase)
@@ -48,6 +56,10 @@ func TestLoad_Defaults(t *testing.T) {
 
 func TestLoad_Normalization(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "postgres://example")
+	t.Setenv("CHAMICORE_POWER_SMD_URL", "http://smd.local:27779/")
+	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", "45s")
+	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_ON_STARTUP", "false")
+	t.Setenv("CHAMICORE_POWER_DEFAULT_CREDENTIAL_ID", " cred-default ")
 	t.Setenv("CHAMICORE_POWER_RETRY_BACKOFF_BASE", "2s")
 	t.Setenv("CHAMICORE_POWER_RETRY_BACKOFF_MAX", "500ms")
 	t.Setenv("CHAMICORE_POWER_VERIFICATION_WINDOW", "20s")
@@ -56,6 +68,10 @@ func TestLoad_Normalization(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 
+	assert.Equal(t, "http://smd.local:27779/", cfg.SMDURL)
+	assert.Equal(t, 45*time.Second, cfg.MappingSyncInterval)
+	assert.False(t, cfg.MappingSyncOnStartup)
+	assert.Equal(t, "cred-default", cfg.DefaultCredentialID)
 	assert.Equal(t, 2*time.Second, cfg.RetryBackoffBase)
 	assert.Equal(t, 2*time.Second, cfg.RetryBackoffMax)
 	assert.Equal(t, 20*time.Second, cfg.VerificationWindow)
@@ -64,6 +80,7 @@ func TestLoad_Normalization(t *testing.T) {
 
 func TestLoad_InvalidOrZeroUsesDefaults(t *testing.T) {
 	t.Setenv("CHAMICORE_POWER_DB_DSN", "postgres://example")
+	t.Setenv("CHAMICORE_POWER_MAPPING_SYNC_INTERVAL", "nope")
 	t.Setenv("CHAMICORE_POWER_BULK_MAX_NODES", "0")
 	t.Setenv("CHAMICORE_POWER_RETRY_ATTEMPTS", "-1")
 	t.Setenv("CHAMICORE_POWER_TRANSITION_DEADLINE", "not-a-duration")
@@ -73,6 +90,7 @@ func TestLoad_InvalidOrZeroUsesDefaults(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 
+	assert.Equal(t, defaultSyncInterval, cfg.MappingSyncInterval)
 	assert.Equal(t, defaultBulkMaxNodes, cfg.BulkMaxNodes)
 	assert.Equal(t, defaultRetryAttempts, cfg.RetryAttempts)
 	assert.Equal(t, defaultTransitionTimeout, cfg.TransitionDeadline)
