@@ -90,7 +90,7 @@ export CHAMICORE_TOKEN=<jwt>
 
 ## 7. Optional: End-to-End VM Boot Validation
 
-Run the built-in verification script (creates a node, assigns it to an SMD group, creates and mutates boot params, creates cloud-init payload, validates boot endpoints, boots a libvirt VM, then verifies guest login prompt/SSH reachability/cloud-init completion). `make compose-vm-up` also starts the shared Sushy emulator used by local power workflows:
+Run the built-in verification script (creates a node, assigns it to an SMD group, creates and mutates boot params, creates cloud-init payload, validates boot endpoints, boots a libvirt VM, validates DHCP/PXE control-plane evidence, and optionally verifies guest login prompt/SSH reachability/cloud-init completion when guest checks are enabled). `make compose-vm-up` also starts the shared Sushy emulator used by local power workflows:
 
 ```bash
 ./scripts/check-local-node-boot-vm.sh
@@ -98,11 +98,12 @@ Run the built-in verification script (creates a node, assigns it to an SMD group
 
 Requirements for this step: `virsh`, `virt-install`, `qemu-img`, `ssh`, `sshpass`, `nc`, and `script`.
 
-By default this runs in `disk` boot mode (cloud image import + cloud-init seed). Guest runtime checks use `CHAMICORE_TEST_VM_NETWORK=default` with VM credentials `chamicore` / `chamicore`.
+By default this runs in `pxe` boot mode (local Kea + BSS network boot on `chamicore-pxe`). Guest runtime checks are disabled by default in this mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because installer-oriented netboot payloads usually do not expose SSH/cloud-init.
 
-Override as needed:
+To run legacy disk-import mode instead:
 
 ```bash
+export CHAMICORE_VM_BOOT_MODE=disk
 export CHAMICORE_TEST_VM_NETWORK=default
 export CHAMICORE_VM_SSH_USER=chamicore
 export CHAMICORE_VM_SSH_PASSWORD=chamicore
@@ -116,13 +117,12 @@ export CHAMICORE_VM_GUEST_CHECKS=false
 export CHAMICORE_VM_REQUIRE_CONSOLE_LOGIN_PROMPT=false
 ```
 
-For true local DHCP/PXE boot through Chamicore (Kea + BSS), run in `pxe` mode:
+PXE-specific explicit overrides (optional):
 
 ```bash
 export CHAMICORE_VM_BOOT_MODE=pxe
 export CHAMICORE_TEST_VM_NETWORK=chamicore-pxe
 export CHAMICORE_VM_PXE_GATEWAY_IP=172.16.10.1
-./scripts/check-local-node-boot-vm.sh
 ```
 
 In `pxe` mode, the checker now uses local gateway-hosted boot artifacts by default:
@@ -187,6 +187,6 @@ Troubleshooting common PXE bind failures:
 make compose-down
 # or stack + VM:
 make compose-vm-down
-# optional for pxe mode cleanup:
+# optional network cleanup:
 # CHAMICORE_VM_BOOT_MODE=pxe CHAMICORE_VM_PXE_DESTROY_NETWORK=true make compose-vm-down
 ```
