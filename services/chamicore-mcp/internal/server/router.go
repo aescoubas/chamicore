@@ -19,6 +19,7 @@ type HTTPServer struct {
 	build    string
 	contract []byte
 	registry *ToolRegistry
+	policy   ToolAuthorizer
 	logger   zerolog.Logger
 }
 
@@ -28,6 +29,7 @@ func NewHTTPServer(
 	version, commit, buildDate string,
 	contract []byte,
 	registry *ToolRegistry,
+	policy ToolAuthorizer,
 	logger zerolog.Logger,
 ) *HTTPServer {
 	return &HTTPServer{
@@ -37,6 +39,7 @@ func NewHTTPServer(
 		build:    buildDate,
 		contract: contract,
 		registry: registry,
+		policy:   policy,
 		logger:   logger,
 	}
 }
@@ -57,7 +60,7 @@ func (s *HTTPServer) Router() chi.Router {
 	r.Use(httputil.CacheControl)
 
 	registerHealthRoutes(r, s.version, s.commit, s.build, s.cfg.MetricsEnabled)
-	registerMCPHTTPRoutes(r, s.registry, s.version, s.logger)
+	registerMCPHTTPRoutes(r, s.registry, s.policy, s.version, s.logger)
 
 	r.Get("/api/tools.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")

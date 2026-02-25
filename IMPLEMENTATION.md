@@ -3005,7 +3005,7 @@ Validation evidence (2026-02-25):
   1. `cd services/chamicore-mcp && go test -race ./...`
   2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.3: Auth/token source strategy + mode gate policy [ ]
+### P9.3: Auth/token source strategy + mode gate policy [x]
 
 **Depends on:** P9.2
 **Repo:** chamicore-mcp
@@ -3029,10 +3029,31 @@ Mode policy (V1):
 - startup fails if write mode is requested without explicit write enable
 
 **Done when:**
-- [ ] Token resolution order is deterministic and covered by tests
-- [ ] Default startup mode is read-only
-- [ ] Write mode requires explicit dual-control config
-- [ ] Policy is enforced centrally for every tool call
+- [x] Token resolution order is deterministic and covered by tests
+- [x] Default startup mode is read-only
+- [x] Write mode requires explicit dual-control config
+- [x] Policy is enforced centrally for every tool call
+
+Validation evidence (2026-02-25):
+- Added token precedence resolver in `services/chamicore-mcp/internal/auth/token_source.go`:
+  1. `CHAMICORE_MCP_TOKEN`
+  2. `CHAMICORE_TOKEN`
+  3. CLI config token (`~/.chamicore/config.yaml`) only when `CHAMICORE_MCP_ALLOW_CLI_CONFIG_TOKEN=true`
+- Added mode policy guard in `services/chamicore-mcp/internal/policy/mode.go`:
+  - default mode resolution to `read-only`,
+  - explicit dual-control requirement (`read-write` + `CHAMICORE_MCP_ENABLE_WRITE=true`),
+  - capability-based tool authorization.
+- Added central tool authorization path in `services/chamicore-mcp/internal/server/policy.go` and enforced it in both transports:
+  - stdio `tools/call` in `internal/server/stdio.go`
+  - HTTP and SSE `tools/call` in `internal/server/http_sse.go`
+- `cmd/chamicore-mcp/main.go` now initializes guard and token source resolution at startup, failing fast on invalid write-mode config.
+- Added tests:
+  - `internal/auth/token_source_test.go`
+  - `internal/policy/mode_test.go`
+  - updated transport tests (`internal/server/stdio_test.go`, `internal/server/http_sse_test.go`) to assert read-only write denial.
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test -race ./...`
+  2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.4: Tool registry + read-only core toolset [ ]
 

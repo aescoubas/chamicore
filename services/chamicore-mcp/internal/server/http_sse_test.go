@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"git.cscs.ch/openchami/chamicore-mcp/internal/config"
+	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
 func TestHTTPServer_RoutesAndSSE(t *testing.T) {
@@ -23,7 +24,7 @@ func TestHTTPServer_RoutesAndSSE(t *testing.T) {
 		MetricsEnabled: true,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, zerolog.Nop())
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -79,7 +80,7 @@ func TestHTTPServer_CallToolUnknown(t *testing.T) {
 		Transport:  config.TransportHTTP,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, zerolog.Nop())
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -94,4 +95,45 @@ func TestHTTPServer_CallToolUnknown(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	require.Contains(t, strings.ToLower(string(body)), "unknown tool")
+}
+
+func TestHTTPServer_ReadOnlyModeDeniesWriteTool(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: bss.bootparams.upsert
+    capability: write
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"bss.bootparams.upsert","arguments":{"component_id":"x0","kernel":"k","initrd":"i"}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Contains(t, strings.ToLower(string(body)), "requires read-write mode")
+}
+
+func mustReadOnlyGuard(t *testing.T) *policy.Guard {
+	t.Helper()
+	guard, err := policy.NewGuard(policy.ModeReadOnly, false)
+	require.NoError(t, err)
+	return guard
 }

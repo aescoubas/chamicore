@@ -82,6 +82,7 @@ func RunStdio(
 	in io.Reader,
 	out io.Writer,
 	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
 	version string,
 	logger zerolog.Logger,
 ) error {
@@ -117,7 +118,7 @@ func RunStdio(
 			continue
 		}
 
-		resp := handleRPCRequest(req, registry, version, logger)
+		resp := handleRPCRequest(req, registry, authorizer, version, logger)
 		if err := writeRPC(writer, resp); err != nil {
 			return err
 		}
@@ -146,7 +147,13 @@ func writeRPC(w *bufio.Writer, resp rpcResponse) error {
 	return nil
 }
 
-func handleRPCRequest(req rpcRequest, registry *ToolRegistry, version string, logger zerolog.Logger) rpcResponse {
+func handleRPCRequest(
+	req rpcRequest,
+	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
+	version string,
+	logger zerolog.Logger,
+) rpcResponse {
 	response := rpcResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
@@ -206,6 +213,13 @@ func handleRPCRequest(req rpcRequest, registry *ToolRegistry, version string, lo
 			}
 			return response
 		}
+		if err := authorizeToolCall(authorizer, tool); err != nil {
+			response.Error = &rpcError{
+				Code:    rpcCodeInvalidParams,
+				Message: err.Error(),
+			}
+			return response
+		}
 		logger.Info().Str("transport", "stdio").Str("tool", tool.Name).Msg("received tool call")
 		response.Result = callToolResult{
 			Content: []contentBlock{
@@ -218,6 +232,7 @@ func handleRPCRequest(req rpcRequest, registry *ToolRegistry, version string, lo
 			StructuredContent: map[string]any{
 				"tool":       tool.Name,
 				"status":     "accepted",
+				"mode":       resolvedMode(authorizer),
 				"capability": tool.Capability,
 				"detail":     "tool handlers are scaffolded in P9.2",
 				"arguments":  params.Arguments,

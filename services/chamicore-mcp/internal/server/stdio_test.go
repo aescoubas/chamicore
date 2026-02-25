@@ -9,6 +9,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+
+	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
 func TestRunStdio_InitializeListAndCall(t *testing.T) {
@@ -23,7 +25,7 @@ func TestRunStdio_InitializeListAndCall(t *testing.T) {
 	in := bytes.NewBufferString(input)
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -58,13 +60,39 @@ func TestRunStdio_UnknownMethod(t *testing.T) {
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"nope","params":{}}` + "\n")
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	var resp rpcResponse
 	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
 	require.NotNil(t, resp.Error)
 	require.Equal(t, rpcCodeMethodNotFound, resp.Error.Code)
+}
+
+func TestRunStdio_ReadOnlyModeDeniesWriteTool(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: smd.groups.members.add
+    capability: write
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"smd.groups.members.add","arguments":{"label":"g","members":["x0"]}}}` + "\n")
+	out := &bytes.Buffer{}
+
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
+	require.NoError(t, runErr)
+
+	var resp rpcResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.NotNil(t, resp.Error)
+	require.Equal(t, rpcCodeInvalidParams, resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "requires read-write mode")
 }
 
 func mustTestRegistry(t *testing.T) *ToolRegistry {
@@ -81,4 +109,11 @@ tools:
 `))
 	require.NoError(t, err)
 	return registry
+}
+
+func mustReadOnlyGuardForStdio(t *testing.T) *policy.Guard {
+	t.Helper()
+	guard, err := policy.NewGuard(policy.ModeReadOnly, false)
+	require.NoError(t, err)
+	return guard
 }

@@ -17,14 +17,15 @@ import (
 func registerMCPHTTPRoutes(
 	r chi.Router,
 	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
 	version string,
 	logger zerolog.Logger,
 ) {
 	r.Route("/mcp/v1", func(r chi.Router) {
 		r.Post("/initialize", handleInitializeHTTP(version))
 		r.Get("/tools", handleListToolsHTTP(registry))
-		r.Post("/tools/call", handleCallToolHTTP(registry, logger))
-		r.Post("/tools/call/sse", handleCallToolSSE(registry, logger))
+		r.Post("/tools/call", handleCallToolHTTP(registry, authorizer, logger))
+		r.Post("/tools/call/sse", handleCallToolSSE(registry, authorizer, logger))
 	})
 }
 
@@ -54,20 +55,20 @@ func handleListToolsHTTP(registry *ToolRegistry) http.HandlerFunc {
 	}
 }
 
-func handleCallToolHTTP(registry *ToolRegistry, logger zerolog.Logger) http.HandlerFunc {
+func handleCallToolHTTP(registry *ToolRegistry, authorizer ToolAuthorizer, logger zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry)
+		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
 		if !ok {
 			return
 		}
 		logger.Info().Str("transport", "http").Str("tool", tool.Name).Msg("received tool call")
-		httputil.RespondJSON(w, http.StatusOK, buildScaffoldToolResult(params, tool))
+		httputil.RespondJSON(w, http.StatusOK, buildScaffoldToolResult(params, tool, resolvedMode(authorizer)))
 	}
 }
 
-func handleCallToolSSE(registry *ToolRegistry, logger zerolog.Logger) http.HandlerFunc {
+func handleCallToolSSE(registry *ToolRegistry, authorizer ToolAuthorizer, logger zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry)
+		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
 		if !ok {
 			return
 		}
@@ -89,7 +90,7 @@ func handleCallToolSSE(registry *ToolRegistry, logger zerolog.Logger) http.Handl
 		}
 		_ = controller.Flush()
 
-		if err := writeSSEEvent(r.Context(), w, "result", buildScaffoldToolResult(params, tool)); err != nil {
+		if err := writeSSEEvent(r.Context(), w, "result", buildScaffoldToolResult(params, tool, resolvedMode(authorizer))); err != nil {
 			return
 		}
 		_ = controller.Flush()
@@ -103,6 +104,7 @@ func parseCallToolRequest(
 	w http.ResponseWriter,
 	r *http.Request,
 	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
 ) (callToolParams, ToolSpec, bool) {
 	var params callToolParams
 	if err := decodeJSONStrict(r, &params); err != nil {
@@ -119,6 +121,10 @@ func parseCallToolRequest(
 	tool, ok := registry.Lookup(name)
 	if !ok {
 		httputil.RespondProblemf(w, r, http.StatusNotFound, "unknown tool: %s", name)
+		return callToolParams{}, ToolSpec{}, false
+	}
+	if err := authorizeToolCall(authorizer, tool); err != nil {
+		httputil.RespondProblem(w, r, http.StatusForbidden, err.Error())
 		return callToolParams{}, ToolSpec{}, false
 	}
 
@@ -146,7 +152,7 @@ func writeSSEEvent(ctx context.Context, w http.ResponseWriter, event string, pay
 	return nil
 }
 
-func buildScaffoldToolResult(params callToolParams, tool ToolSpec) callToolResult {
+func buildScaffoldToolResult(params callToolParams, tool ToolSpec, mode string) callToolResult {
 	return callToolResult{
 		Content: []contentBlock{
 			{
@@ -158,6 +164,7 @@ func buildScaffoldToolResult(params callToolParams, tool ToolSpec) callToolResul
 		StructuredContent: map[string]any{
 			"tool":       tool.Name,
 			"status":     "accepted",
+			"mode":       mode,
 			"capability": tool.Capability,
 			"detail":     "tool handlers are scaffolded in P9.2",
 			"arguments":  params.Arguments,
