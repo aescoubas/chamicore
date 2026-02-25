@@ -98,7 +98,7 @@ Run the built-in verification script (creates a node, assigns it to an SMD group
 
 Requirements for this step: `virsh`, `virt-install`, `qemu-img`, `ssh`, `sshpass`, `nc`, and `script`.
 
-By default, guest runtime checks use `CHAMICORE_TEST_VM_NETWORK=default` with the VM cloud-init credentials `chamicore` / `chamicore` (the libvirt helper now defaults to an Ubuntu cloud image with cloud-init seed data).
+By default this runs in `disk` boot mode (cloud image import + cloud-init seed). Guest runtime checks use `CHAMICORE_TEST_VM_NETWORK=default` with VM credentials `chamicore` / `chamicore`.
 
 Override as needed:
 
@@ -116,10 +116,23 @@ export CHAMICORE_VM_GUEST_CHECKS=false
 export CHAMICORE_VM_REQUIRE_CONSOLE_LOGIN_PROMPT=false
 ```
 
+For true local DHCP/PXE boot through Chamicore (Kea + BSS), run in `pxe` mode:
+
+```bash
+export CHAMICORE_VM_BOOT_MODE=pxe
+export CHAMICORE_TEST_VM_NETWORK=chamicore-pxe
+export CHAMICORE_VM_PXE_GATEWAY_IP=172.16.10.1
+./scripts/check-local-node-boot-vm.sh
+```
+
+In `pxe` mode, the script validates Kea reservation boot options and observes a DHCP lease for the VM MAC. Guest SSH/cloud-init checks are disabled by default in this mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are installer-oriented unless you provide your own kernel/initrd/cmdline.
+
 ## 8. Tear Down
 
 ```bash
 make compose-down
 # or stack + VM:
 make compose-vm-down
+# optional for pxe mode cleanup:
+# CHAMICORE_VM_BOOT_MODE=pxe CHAMICORE_VM_PXE_DESTROY_NETWORK=true make compose-vm-down
 ```

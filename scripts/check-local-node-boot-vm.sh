@@ -10,15 +10,29 @@ BSS_ENDPOINT="${CHAMICORE_BSS_ENDPOINT:-http://localhost:27778}"
 CLOUDINIT_ENDPOINT="${CHAMICORE_CLOUDINIT_ENDPOINT:-http://localhost:27777}"
 VM_NAME="${CHAMICORE_VM_NAME:-chamicore-devvm}"
 
+VM_BOOT_MODE="${CHAMICORE_VM_BOOT_MODE:-disk}"
+VM_BOOT_MODE="${VM_BOOT_MODE,,}"
+DEFAULT_PXE_KERNEL_URI="https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux"
+DEFAULT_PXE_INITRD_URI="https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz"
+
 NODE_ID="${CHAMICORE_TEST_NODE_ID:-node-demo-$(date +%s)}"
-KERNEL_URI="${CHAMICORE_TEST_KERNEL_URI:-https://boot.example.local/vmlinuz}"
-INITRD_URI="${CHAMICORE_TEST_INITRD_URI:-https://boot.example.local/initrd.img}"
+KERNEL_URI="${CHAMICORE_TEST_KERNEL_URI:-}"
+INITRD_URI="${CHAMICORE_TEST_INITRD_URI:-}"
 CMDLINE="${CHAMICORE_TEST_CMDLINE:-console=ttyS0}"
 ROLE="${CHAMICORE_TEST_ROLE:-Compute}"
 INTERFACE_IPS="${CHAMICORE_TEST_IPS_JSON:-[\"172.16.10.50\"]}"
 SKIP_COMPOSE_UP="${CHAMICORE_SKIP_COMPOSE_UP:-false}"
 READINESS_TIMEOUT_SECONDS="${CHAMICORE_READINESS_TIMEOUT_SECONDS:-60}"
 CURL_MAX_TIME="${CHAMICORE_CURL_MAX_TIME:-5}"
+KEA_ENDPOINT="${CHAMICORE_KEA_ENDPOINT:-}"
+if [[ -z "${KEA_ENDPOINT}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    KEA_ENDPOINT="http://localhost:${CHAMICORE_KEA_PXE_CONTROL_PORT:-18000}"
+  else
+    KEA_ENDPOINT="http://localhost:8000"
+  fi
+fi
+KEA_LEASE_TIMEOUT_SECONDS="${CHAMICORE_KEA_LEASE_TIMEOUT_SECONDS:-120}"
 GROUP_NAME="${CHAMICORE_TEST_GROUP_NAME:-group-${NODE_ID}}"
 GROUP_TAGS="${CHAMICORE_TEST_GROUP_TAGS:-{\"rack\":\"R12\",\"purpose\":\"vm-e2e\"}}"
 GROUP_DESCRIPTION_INITIAL="${CHAMICORE_TEST_GROUP_DESCRIPTION_INITIAL:-VM E2E validation group}"
@@ -26,9 +40,26 @@ GROUP_DESCRIPTION_UPDATED="${CHAMICORE_TEST_GROUP_DESCRIPTION_UPDATED:-VM E2E va
 BOOTPARAM_PATCH_CMDLINE="${CHAMICORE_TEST_BOOTPARAM_PATCH_CMDLINE:-console=ttyS0 ip=dhcp rd.debug}"
 BOOTPARAM_UPDATED_CMDLINE="${CHAMICORE_TEST_BOOTPARAM_UPDATED_CMDLINE:-console=ttyS0 ip=dhcp rd.debug audit=1}"
 BOOTPARAM_DISCOVERY_TIMEOUT_SECONDS="${CHAMICORE_TEST_BOOTPARAM_DISCOVERY_TIMEOUT_SECONDS:-15}"
-VM_NETWORK="${CHAMICORE_TEST_VM_NETWORK:-default}"
+VM_NETWORK="${CHAMICORE_TEST_VM_NETWORK:-}"
+if [[ -z "${VM_NETWORK}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    VM_NETWORK="${CHAMICORE_VM_PXE_NETWORK_NAME:-chamicore-pxe}"
+  else
+    VM_NETWORK="default"
+  fi
+fi
 VM_RECREATE="${CHAMICORE_TEST_VM_RECREATE:-true}"
-VM_GUEST_CHECKS="${CHAMICORE_VM_GUEST_CHECKS:-true}"
+
+if [[ -z "${CHAMICORE_VM_GUEST_CHECKS+x}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    VM_GUEST_CHECKS="false"
+  else
+    VM_GUEST_CHECKS="true"
+  fi
+else
+  VM_GUEST_CHECKS="${CHAMICORE_VM_GUEST_CHECKS}"
+fi
+
 VM_REQUIRE_CONSOLE_LOGIN_PROMPT="${CHAMICORE_VM_REQUIRE_CONSOLE_LOGIN_PROMPT:-true}"
 VM_IP_TIMEOUT_SECONDS="${CHAMICORE_VM_IP_TIMEOUT_SECONDS:-180}"
 VM_LOGIN_PROMPT_TIMEOUT_SECONDS="${CHAMICORE_VM_LOGIN_PROMPT_TIMEOUT_SECONDS:-60}"
@@ -37,10 +68,33 @@ VM_SSH_LOGIN_TIMEOUT_SECONDS="${CHAMICORE_VM_SSH_LOGIN_TIMEOUT_SECONDS:-180}"
 VM_SSH_PORT="${CHAMICORE_VM_SSH_PORT:-22}"
 VM_SSH_USER="${CHAMICORE_VM_SSH_USER:-${CHAMICORE_VM_CLOUD_INIT_USER:-chamicore}}"
 VM_SSH_PASSWORD="${CHAMICORE_VM_SSH_PASSWORD:-${CHAMICORE_VM_CLOUD_INIT_PASSWORD:-chamicore}}"
-VM_CLOUD_INIT_ENABLE="${CHAMICORE_VM_CLOUD_INIT_ENABLE:-true}"
+if [[ -z "${CHAMICORE_VM_CLOUD_INIT_ENABLE+x}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    VM_CLOUD_INIT_ENABLE="false"
+  else
+    VM_CLOUD_INIT_ENABLE="true"
+  fi
+else
+  VM_CLOUD_INIT_ENABLE="${CHAMICORE_VM_CLOUD_INIT_ENABLE}"
+fi
 VM_CLOUD_INIT_USER="${CHAMICORE_VM_CLOUD_INIT_USER:-${VM_SSH_USER}}"
 VM_CLOUD_INIT_PASSWORD="${CHAMICORE_VM_CLOUD_INIT_PASSWORD:-${VM_SSH_PASSWORD}}"
 VM_SSH_KNOWN_HOSTS="${CHAMICORE_VM_SSH_KNOWN_HOSTS:-${REPO_ROOT}/.artifacts/known_hosts-vm}"
+
+if [[ -z "${KERNEL_URI}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    KERNEL_URI="${DEFAULT_PXE_KERNEL_URI}"
+  else
+    KERNEL_URI="https://boot.example.local/vmlinuz"
+  fi
+fi
+if [[ -z "${INITRD_URI}" ]]; then
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    INITRD_URI="${DEFAULT_PXE_INITRD_URI}"
+  else
+    INITRD_URI="https://boot.example.local/initrd.img"
+  fi
+fi
 
 log() {
   printf '[check-local-node-boot-vm] %s\n' "$*"
@@ -169,6 +223,61 @@ require_json_expr_arg() {
   if ! printf '%s' "${json}" | jq -e --arg "${arg_name}" "${arg_value}" "${expr}" >/dev/null; then
     fail "${message}"
   fi
+}
+
+kea_command() {
+  local command="$1"
+  local arguments_json="${2:-}"
+  local payload
+  if [[ -n "${arguments_json}" ]]; then
+    payload="$(jq -cn --arg command "${command}" --argjson arguments "${arguments_json}" '{command:$command,service:["dhcp4"],arguments:$arguments}')"
+  else
+    payload="$(jq -cn --arg command "${command}" '{command:$command,service:["dhcp4"]}')"
+  fi
+
+  curl --max-time "${CURL_MAX_TIME}" -fsS \
+    -H "Content-Type: application/json" \
+    -d "${payload}" \
+    "${KEA_ENDPOINT}"
+}
+
+validate_pxe_dhcp_flow() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  log "validating Kea reservation boot options for MAC ${LOWER_MAC}"
+  local reservations_json
+  reservations_json="$(kea_command "reservation-get-all")"
+  require_json_expr "${reservations_json}" '.[0].result == 0' "Kea reservation-get-all failed"
+  require_json_expr_arg "${reservations_json}" \
+    '[.[0].arguments.reservations[]? | select((.["hw-address"] | ascii_downcase) == $mac) | .["boot-file-name"] | strings | contains("/boot/v1/bootscript?mac=")] | any' \
+    "mac" "${LOWER_MAC}" \
+    "Kea reservation for VM MAC does not contain bootscript URL"
+
+  log "waiting for Kea DHCP lease for MAC ${LOWER_MAC}"
+  local deadline
+  deadline="$((SECONDS + KEA_LEASE_TIMEOUT_SECONDS))"
+  while (( SECONDS < deadline )); do
+    local leases_json
+    leases_json="$(kea_command "lease4-get-all")"
+
+    if printf '%s' "${leases_json}" | jq -e --arg mac "${LOWER_MAC}" \
+      '.[0].result == 0 and ([.[0].arguments.leases[]? | select((.["hw-address"] | ascii_downcase) == $mac)] | length > 0)' >/dev/null; then
+      log "Kea lease observed for ${LOWER_MAC}"
+      return 0
+    fi
+
+    local result text
+    result="$(printf '%s' "${leases_json}" | jq -r '.[0].result // 1')"
+    text="$(printf '%s' "${leases_json}" | jq -r '.[0].text // ""')"
+    if [[ "${result}" != "0" && "${text,,}" != *"0 ipv4 lease(s) found"* ]]; then
+      fail "Kea lease4-get-all failed: ${text:-unknown error}"
+    fi
+    sleep 2
+  done
+
+  fail "did not observe Kea lease for ${LOWER_MAC} within ${KEA_LEASE_TIMEOUT_SECONDS}s"
 }
 
 resolve_bootparam_id() {
@@ -320,6 +429,7 @@ boot_vm() {
   log "starting libvirt VM via make compose-vm-up"
   (
     cd "${REPO_ROOT}" && \
+      CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
       CHAMICORE_VM_SKIP_COMPOSE=true \
       CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
       CHAMICORE_VM_RECREATE="${VM_RECREATE}" \
@@ -495,11 +605,27 @@ main() {
   require_cmd sshpass
   require_cmd timeout
   require_cmd script
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    require_cmd docker
+  fi
   ensure_cli
 
   if ! is_true "${SKIP_COMPOSE_UP}"; then
-    log "ensuring compose stack is up"
-    (cd "${REPO_ROOT}" && make compose-up)
+    if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+      log "ensuring compose stack is up (pxe override)"
+      (
+        cd "${REPO_ROOT}/shared/chamicore-deploy" && \
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.override.yml \
+            -f docker-compose.pxe.yml \
+            --profile vm \
+            up -d --build
+      )
+    else
+      log "ensuring compose stack is up"
+      (cd "${REPO_ROOT}" && make compose-up)
+    fi
   fi
 
   check_readiness "smd" "${SMD_ENDPOINT}"
@@ -514,9 +640,11 @@ main() {
   exercise_bootparam_workflow
   validate_boot_path
   boot_vm
+  validate_pxe_dhcp_flow
   validate_guest_runtime
 
   log "success"
+  log "boot_mode=${VM_BOOT_MODE}"
   log "node_id=${NODE_ID}"
   log "mac=${MAC}"
   log "group_name=${GROUP_NAME}"

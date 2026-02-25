@@ -70,6 +70,8 @@ export CHAMICORE_ENDPOINT=http://localhost:8080
 make compose-vm-up
 # Optional: override defaults (network, cloud-init user/password, image)
 # CHAMICORE_VM_NETWORK=default CHAMICORE_VM_CLOUD_INIT_USER=chamicore CHAMICORE_VM_CLOUD_INIT_PASSWORD=chamicore make compose-vm-up
+# Optional: true DHCP/PXE boot mode through Kea/BSS
+# CHAMICORE_VM_BOOT_MODE=pxe CHAMICORE_VM_NETWORK=chamicore-pxe make compose-vm-up
 
 # Run tests
 make test
@@ -103,6 +105,7 @@ See `quality/README.md` for details.
 - Node.js 20+ and npm (for chamicore-ui frontend)
 - Docker and Docker Compose
 - libvirt + `virsh` + `virt-install` + `qemu-img` (optional, for `make compose-vm-up`)
+- `ssh` + `sshpass` + `nc` + `script` (optional, for guest runtime checks in `scripts/check-local-node-boot-vm.sh`)
 - Make
 - Git (with submodule support)
 - [k6](https://k6.io/) (for load testing, optional)
