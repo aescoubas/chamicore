@@ -125,6 +125,19 @@ export CHAMICORE_VM_PXE_GATEWAY_IP=172.16.10.1
 ./scripts/check-local-node-boot-vm.sh
 ```
 
+In `pxe` mode, the checker now uses local gateway-hosted boot artifacts by default:
+- kernel: `http://172.16.10.1:8080/pxe/vmlinuz`
+- initrd: `http://172.16.10.1:8080/pxe/initrd.img`
+
+`make compose-vm-up` stages these files from the host `/boot` tree into `shared/chamicore-deploy/nginx/pxe/`. Override sources if needed:
+
+```bash
+export CHAMICORE_VM_PXE_KERNEL_SOURCE=/path/to/vmlinuz
+export CHAMICORE_VM_PXE_INITRD_SOURCE=/path/to/initrd.img
+```
+
+If host `/boot` is not readable by your user, the script can bootstrap this payload via one-time download (`CHAMICORE_VM_PXE_ALLOW_FALLBACK_DOWNLOAD=true`, default). Runtime PXE fetch still uses the local gateway URLs above.
+
 Default local PXE-related host ports:
 - `CHAMICORE_SUSHY_HOST_PORT=8001` (sushy-tools)
 - `CHAMICORE_KEA_PXE_CONTROL_PORT=18000` (Kea shim API endpoint used by kea-sync/checker)
@@ -138,11 +151,20 @@ In `pxe` mode, the script validates DHCP/PXE control-plane evidence:
 - Kea reports an active DHCP lease for the VM MAC.
 - Gateway access logs contain a successful `GET /boot/v1/bootscript?mac=<vm-mac>`.
 
-By default, serial-console chain markers (iPXE and Linux handoff) are best-effort because some firmware/ROM combinations do not emit reliable serial output. To make missing console markers fail the check, set:
+By default, serial-console chain markers are best-effort because some firmware/ROM combinations do not emit reliable output. To enforce strict console validation, set:
 
 ```bash
 export CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=true
 ```
+
+In strict mode, the checker requires Linux-kernel handoff markers on serial output and still enforces hard gateway/Kea checks. Explicit iPXE markers are preferred, but when firmware omits them the chain is accepted if gateway bootscript fetch succeeded and Linux markers are present.
+
+Serial output is captured from VM creation into:
+- `${CHAMICORE_VM_SERIAL_LOG:-shared/chamicore-deploy/.artifacts/libvirt/<vm-name>-serial.log}`
+- capture process pid file: `${CHAMICORE_VM_SERIAL_CAPTURE_PID_FILE:-shared/chamicore-deploy/.artifacts/libvirt/<vm-name>-serial-capture.pid}`
+
+When PXE debug capture is enabled (`CHAMICORE_VM_PXE_CAPTURE_DEBUG_EVIDENCE=true`, default), the checker also writes gateway/Kea/serial snapshots under:
+- `${CHAMICORE_VM_PXE_DEBUG_ARTIFACTS_DIR:-.artifacts/check-local-node-boot-vm}/`
 
 Guest SSH/cloud-init checks remain disabled by default in `pxe` mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are typically installer-oriented. Enable them explicitly if your netboot payload provides reachable SSH/cloud-init behavior.
 
@@ -155,6 +177,9 @@ Troubleshooting common PXE bind failures:
   sushy-tools host port collision; set `CHAMICORE_SUSHY_HOST_PORT` to an unused port.
 - VM shows no PXE/DHCP traffic:
   ensure a PXE-capable NIC model is used (`CHAMICORE_VM_PXE_NIC_MODEL=e1000` is the local default) and keep the iPXE ROM auto-detected (or set `CHAMICORE_VM_PXE_ROMFILE` explicitly, for example `/usr/lib/ipxe/qemu/pxe-e1000.rom`).
+- strict console chain fails:
+  inspect `${CHAMICORE_VM_SERIAL_LOG}` first. If serial output is empty but gateway `bootscript` fetch and Kea lease checks pass, firmware in this environment is not emitting reliable serial markers; keep `CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=false` for portability.
+  for deeper iPXE-side debugging, set `CHAMICORE_BSS_BOOTSCRIPT_DEBUG=true` so generated bootscripts print explicit markers before kernel/initrd/boot and on boot failure.
 
 ## 8. Tear Down
 

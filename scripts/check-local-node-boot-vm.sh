@@ -9,11 +9,15 @@ SMD_ENDPOINT="${CHAMICORE_SMD_ENDPOINT:-http://localhost:27779}"
 BSS_ENDPOINT="${CHAMICORE_BSS_ENDPOINT:-http://localhost:27778}"
 CLOUDINIT_ENDPOINT="${CHAMICORE_CLOUDINIT_ENDPOINT:-http://localhost:27777}"
 VM_NAME="${CHAMICORE_VM_NAME:-chamicore-devvm}"
+VM_WORKDIR="${CHAMICORE_VM_WORKDIR:-${REPO_ROOT}/shared/chamicore-deploy/.artifacts/libvirt}"
+VM_SERIAL_LOG="${CHAMICORE_VM_SERIAL_LOG:-${VM_WORKDIR}/${VM_NAME}-serial.log}"
 
 VM_BOOT_MODE="${CHAMICORE_VM_BOOT_MODE:-disk}"
 VM_BOOT_MODE="${VM_BOOT_MODE,,}"
-DEFAULT_PXE_KERNEL_URI="http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux"
-DEFAULT_PXE_INITRD_URI="http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz"
+DEFAULT_PXE_GATEWAY_IP="${CHAMICORE_VM_PXE_GATEWAY_IP:-172.16.10.1}"
+DEFAULT_PXE_GATEWAY_PORT="${CHAMICORE_GATEWAY_PORT:-8080}"
+DEFAULT_PXE_KERNEL_URI="http://${DEFAULT_PXE_GATEWAY_IP}:${DEFAULT_PXE_GATEWAY_PORT}/pxe/vmlinuz"
+DEFAULT_PXE_INITRD_URI="http://${DEFAULT_PXE_GATEWAY_IP}:${DEFAULT_PXE_GATEWAY_PORT}/pxe/initrd.img"
 
 NODE_ID="${CHAMICORE_TEST_NODE_ID:-node-demo-$(date +%s)}"
 KERNEL_URI="${CHAMICORE_TEST_KERNEL_URI:-}"
@@ -71,6 +75,10 @@ PXE_GATEWAY_FETCH_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_GATEWAY_FETCH_TIMEOUT_SECO
 PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS:-180}"
 PXE_CONSOLE_CAPTURE_STEP_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CAPTURE_STEP_SECONDS:-20}"
 PXE_REQUIRE_CONSOLE_CHAIN="${CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN:-false}"
+PXE_CAPTURE_DEBUG_EVIDENCE="${CHAMICORE_VM_PXE_CAPTURE_DEBUG_EVIDENCE:-true}"
+PXE_DEBUG_ARTIFACTS_DIR="${CHAMICORE_VM_PXE_DEBUG_ARTIFACTS_DIR:-${REPO_ROOT}/.artifacts/check-local-node-boot-vm}"
+PXE_DEBUG_RUN_LABEL="${CHAMICORE_VM_PXE_DEBUG_RUN_LABEL:-$(date -u +%Y%m%dT%H%M%SZ)}"
+PXE_DEBUG_RUN_DIR=""
 VM_SSH_PORT="${CHAMICORE_VM_SSH_PORT:-22}"
 VM_SSH_USER="${CHAMICORE_VM_SSH_USER:-${CHAMICORE_VM_CLOUD_INIT_USER:-chamicore}}"
 VM_SSH_PASSWORD="${CHAMICORE_VM_SSH_PASSWORD:-${CHAMICORE_VM_CLOUD_INIT_PASSWORD:-chamicore}}"
@@ -107,6 +115,9 @@ log() {
 }
 
 fail() {
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]] && is_true "${PXE_CAPTURE_DEBUG_EVIDENCE}" && declare -F collect_pxe_debug_evidence >/dev/null; then
+    collect_pxe_debug_evidence "failure" || true
+  fi
   printf '[check-local-node-boot-vm] error: %s\n' "$*" >&2
   exit 1
 }
@@ -286,6 +297,67 @@ gateway_logs() {
   )
 }
 
+compose_service_logs() {
+  local service="$1"
+  local deploy_dir="${REPO_ROOT}/shared/chamicore-deploy"
+  local -a compose_files=(
+    -f docker-compose.yml
+    -f docker-compose.override.yml
+    -f docker-compose.pxe.yml
+  )
+
+  (
+    cd "${deploy_dir}" && \
+      docker compose "${compose_files[@]}" logs --no-color "${service}" 2>/dev/null
+  )
+}
+
+init_pxe_debug_evidence() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  PXE_DEBUG_RUN_DIR="${PXE_DEBUG_ARTIFACTS_DIR}/${PXE_DEBUG_RUN_LABEL}-${VM_NAME}-${NODE_ID}"
+  mkdir -p "${PXE_DEBUG_RUN_DIR}"
+  log "PXE debug artifacts will be written to ${PXE_DEBUG_RUN_DIR}"
+}
+
+collect_pxe_debug_evidence() {
+  local label="${1:-snapshot}"
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+  [[ -n "${PXE_DEBUG_RUN_DIR}" ]] || init_pxe_debug_evidence
+
+  local stamp out_prefix
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  out_prefix="${PXE_DEBUG_RUN_DIR}/${stamp}-${label}"
+
+  {
+    printf 'timestamp=%s\n' "${stamp}"
+    printf 'label=%s\n' "${label}"
+    printf 'vm_name=%s\n' "${VM_NAME}"
+    printf 'vm_serial_log=%s\n' "${VM_SERIAL_LOG}"
+    printf 'vm_boot_mode=%s\n' "${VM_BOOT_MODE}"
+    printf 'node_id=%s\n' "${NODE_ID}"
+    printf 'mac=%s\n' "${LOWER_MAC}"
+  } > "${out_prefix}-context.txt"
+
+  gateway_logs > "${out_prefix}-gateway.log" || true
+  compose_service_logs "kea-pxe" > "${out_prefix}-kea-pxe.log" || true
+
+  if [[ -r "${VM_SERIAL_LOG}" ]]; then
+    cp -f "${VM_SERIAL_LOG}" "${out_prefix}-vm-serial.log" || true
+  fi
+
+  virsh domstate "${VM_NAME}" > "${out_prefix}-domstate.txt" 2>&1 || true
+  virsh dominfo "${VM_NAME}" > "${out_prefix}-dominfo.txt" 2>&1 || true
+  virsh domiflist "${VM_NAME}" > "${out_prefix}-domiflist.txt" 2>&1 || true
+  virsh dumpxml "${VM_NAME}" > "${out_prefix}-dom.xml" 2>/dev/null || true
+  kea_command "reservation-get-all" > "${out_prefix}-kea-reservations.json" 2>/dev/null || true
+  kea_command "lease4-get-all" > "${out_prefix}-kea-leases.json" 2>/dev/null || true
+}
+
 validate_gateway_bootscript_fetch() {
   if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
     return 0
@@ -327,12 +399,35 @@ capture_console_chunk() {
     bash -lc "printf '\n' | script -qec 'virsh console ${VM_NAME}' /dev/null" 2>&1 || true
 }
 
+console_has_ipxe_marker() {
+  local output="$1"
+  printf '%s\n' "${output}" | grep -Eiq 'iPXE|PXE-E|Booting from ROM'
+}
+
+console_has_linux_marker() {
+  local output="$1"
+  printf '%s\n' "${output}" | grep -Eiq 'Linux version|Kernel command line|EFI stub|Decompressing Linux|Starting kernel|Debian GNU/Linux installer'
+}
+
+read_console_output() {
+  local capture_seconds="$1"
+  local output=""
+
+  if [[ -r "${VM_SERIAL_LOG}" ]]; then
+    output="$(cat "${VM_SERIAL_LOG}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${output}" && "${capture_seconds}" -gt 0 ]]; then
+    output="$(capture_console_chunk "${capture_seconds}")"
+  fi
+  printf '%s' "${output}"
+}
+
 validate_pxe_chain_console() {
   if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
     return 0
   fi
 
-  log "verifying PXE chain on serial console (iPXE -> Linux)"
+  log "verifying PXE chain on serial console log (iPXE -> Linux): ${VM_SERIAL_LOG}"
   local deadline
   deadline="$((SECONDS + PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS))"
   local saw_ipxe="false"
@@ -340,7 +435,7 @@ validate_pxe_chain_console() {
   local console_output=""
 
   while (( SECONDS < deadline )); do
-    local remaining capture_window chunk
+    local remaining capture_window
     remaining="$((deadline - SECONDS))"
     capture_window="${PXE_CONSOLE_CAPTURE_STEP_SECONDS}"
     if (( capture_window > remaining )); then
@@ -350,16 +445,13 @@ validate_pxe_chain_console() {
       break
     fi
 
-    chunk="$(capture_console_chunk "${capture_window}")"
-    if [[ -n "${chunk}" ]]; then
-      console_output+=$'\n'"${chunk}"
-    fi
+    console_output="$(read_console_output "${capture_window}")"
 
-    if [[ "${saw_ipxe}" != "true" ]] && printf '%s\n' "${console_output}" | grep -Eiq 'iPXE|PXE-E|Booting from ROM'; then
+    if [[ "${saw_ipxe}" != "true" ]] && console_has_ipxe_marker "${console_output}"; then
       saw_ipxe="true"
       log "observed iPXE marker on serial console"
     fi
-    if [[ "${saw_linux}" != "true" ]] && printf '%s\n' "${console_output}" | grep -Eiq 'Linux version|Kernel command line|EFI stub|Decompressing Linux|Starting kernel|Debian GNU/Linux installer'; then
+    if [[ "${saw_linux}" != "true" ]] && console_has_linux_marker "${console_output}"; then
       saw_linux="true"
       log "observed Linux kernel marker on serial console"
     fi
@@ -371,13 +463,24 @@ validate_pxe_chain_console() {
     sleep 2
   done
 
+  console_output="$(read_console_output 0)"
   printf '%s\n' "${console_output}" | tail -n 200 >&2 || true
+  if printf '%s\n' "${console_output}" | grep -Eiq 'No bootable device'; then
+    log "serial console includes 'No bootable device' marker"
+  fi
+  saw_ipxe="$(console_has_ipxe_marker "${console_output}" && printf true || printf false)"
+  saw_linux="$(console_has_linux_marker "${console_output}" && printf true || printf false)"
+
   if [[ "${saw_ipxe}" != "true" ]]; then
+    if [[ "${saw_linux}" == "true" ]]; then
+      log "serial console did not show explicit iPXE marker; accepting chain because Linux kernel marker was observed after successful bootscript fetch"
+      return 0
+    fi
     if ! is_true "${PXE_REQUIRE_CONSOLE_CHAIN}"; then
       log "serial console did not show iPXE markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s; continuing because CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=${PXE_REQUIRE_CONSOLE_CHAIN}"
       return 0
     fi
-    fail "serial console did not show iPXE markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
+    fail "serial console did not show iPXE or Linux kernel markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
   fi
   if ! is_true "${PXE_REQUIRE_CONSOLE_CHAIN}"; then
     log "serial console showed iPXE but no Linux kernel handoff marker within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s; continuing because CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=${PXE_REQUIRE_CONSOLE_CHAIN}"
@@ -581,6 +684,13 @@ validate_boot_path() {
   contains_or_fail "${bootscript}" "initrd ${INITRD_URI}" "bootscript initrd line mismatch"
   contains_or_fail "${bootscript}" "boot" "bootscript missing boot directive"
 
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    log "validating kernel artifact URL: ${KERNEL_URI}"
+    curl --max-time "${CURL_MAX_TIME}" -fsSI "${KERNEL_URI}" >/dev/null || fail "unable to fetch kernel artifact (${KERNEL_URI})"
+    log "validating initrd artifact URL: ${INITRD_URI}"
+    curl --max-time "${CURL_MAX_TIME}" -fsSI "${INITRD_URI}" >/dev/null || fail "unable to fetch initrd artifact (${INITRD_URI})"
+  fi
+
   local user_data_url="${CLOUDINIT_ENDPOINT}/cloud-init/${NODE_ID}/user-data"
   log "validating Cloud-Init user-data: ${user_data_url}"
   local user_data_resp
@@ -607,6 +717,8 @@ prepare_pxe_stack_prereqs() {
     cd "${REPO_ROOT}" && \
       CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
       CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
+      CHAMICORE_VM_WORKDIR="${VM_WORKDIR}" \
+      CHAMICORE_VM_SERIAL_LOG="${VM_SERIAL_LOG}" \
       CHAMICORE_VM_RECREATE=false \
       CHAMICORE_VM_SKIP_COMPOSE=true \
       CHAMICORE_VM_PREP_ONLY=true \
@@ -621,6 +733,8 @@ boot_vm() {
       CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
       CHAMICORE_VM_SKIP_COMPOSE=true \
       CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
+      CHAMICORE_VM_WORKDIR="${VM_WORKDIR}" \
+      CHAMICORE_VM_SERIAL_LOG="${VM_SERIAL_LOG}" \
       CHAMICORE_VM_MAC="${MAC}" \
       CHAMICORE_VM_RECREATE="${VM_RECREATE}" \
       CHAMICORE_VM_CLOUD_INIT_ENABLE="${VM_CLOUD_INIT_ENABLE}" \
@@ -675,6 +789,9 @@ boot_vm() {
     while (( SECONDS < deadline )); do
       if kea_command "lease4-get-all" >/dev/null 2>&1; then
         log "kea-pxe shim reachable after restart"
+        if is_true "${PXE_CAPTURE_DEBUG_EVIDENCE}"; then
+          collect_pxe_debug_evidence "post-vm-boot"
+        fi
         return 0
       fi
       sleep 2
@@ -844,6 +961,7 @@ main() {
     require_cmd ip
   fi
   ensure_cli
+  init_pxe_debug_evidence
 
   if ! is_true "${SKIP_COMPOSE_UP}"; then
     if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
@@ -877,11 +995,17 @@ main() {
   exercise_bootparam_workflow
   validate_boot_path
   wait_for_pxe_reservation_boot_options
+  if is_true "${PXE_CAPTURE_DEBUG_EVIDENCE}"; then
+    collect_pxe_debug_evidence "pre-vm-boot"
+  fi
   boot_vm
   validate_gateway_bootscript_fetch
-  validate_pxe_chain_console
   validate_pxe_dhcp_flow
+  validate_pxe_chain_console
   validate_guest_runtime
+  if is_true "${PXE_CAPTURE_DEBUG_EVIDENCE}"; then
+    collect_pxe_debug_evidence "success"
+  fi
 
   log "success"
   log "boot_mode=${VM_BOOT_MODE}"
@@ -890,6 +1014,12 @@ main() {
   log "group_name=${GROUP_NAME}"
   log "bootparam_id=${BOOTPARAM_ID}"
   log "vm_name=${VM_NAME}"
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    log "vm_serial_log=${VM_SERIAL_LOG}"
+    if [[ -n "${PXE_DEBUG_RUN_DIR}" ]]; then
+      log "pxe_debug_artifacts=${PXE_DEBUG_RUN_DIR}"
+    fi
+  fi
   if [[ -n "${VM_IP}" ]]; then
     log "vm_ip=${VM_IP}"
   fi
