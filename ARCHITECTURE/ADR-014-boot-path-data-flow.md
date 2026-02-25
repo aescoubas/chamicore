@@ -159,6 +159,30 @@ Boot script resolution:
 
 One indexed point lookup. No HTTP calls. p99 target: < 100ms.
 
+### DHCP Boot Option Synthesis in Kea-Sync
+
+Kea-Sync is responsible for programming DHCP reservation boot directives so nodes can
+reach BSS without manual Kea edits. In addition to MAC/IP/hostname, synchronized
+reservations include:
+
+- `boot-file-name` (DHCP option 67, or URL for HTTP boot)
+- `next-server` (DHCP next-server / option 66 equivalent)
+
+Boot option synthesis is configurable:
+
+- `direct-http` strategy:
+  - `boot-file-name` is rendered from a template (for example
+    `http://<entrypoint>/boot/v1/bootscript?mac=__mac__`).
+  - `next-server` is optional.
+- `ipxe-chain` strategy:
+  - `boot-file-name` is a chainloader filename (for example `undionly.kpxe` or `ipxe.efi`).
+  - `next-server` is required in most environments.
+
+Supported template variables are `{{component_id}}`/`__component_id__`,
+`{{mac}}`/`__mac__`, `{{ip}}`/`__ip__`, and `{{hostname}}`/`__hostname__`.
+This keeps DHCP boot metadata aligned with SMD inventory and avoids out-of-band Kea
+configuration drift.
+
 ### Cloud-Init Data Model: Component Metadata Stored Locally
 
 Cloud-Init similarly stores payloads and any component metadata it needs for template
