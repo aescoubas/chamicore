@@ -125,7 +125,13 @@ export CHAMICORE_VM_PXE_GATEWAY_IP=172.16.10.1
 ./scripts/check-local-node-boot-vm.sh
 ```
 
-In `pxe` mode, the script validates Kea reservation boot options and observes a DHCP lease for the VM MAC. Guest SSH/cloud-init checks are disabled by default in this mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are installer-oriented unless you provide your own kernel/initrd/cmdline.
+In `pxe` mode, the script enforces the full chain evidence:
+- Kea reservation for the VM MAC contains a bootscript URL.
+- Kea reports an active DHCP lease for the VM MAC.
+- Gateway access logs contain a successful `GET /boot/v1/bootscript?mac=<vm-mac>`.
+- VM serial console shows iPXE markers and Linux kernel handoff markers.
+
+Guest SSH/cloud-init checks remain disabled by default in `pxe` mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are typically installer-oriented. Enable them explicitly if your netboot payload provides reachable SSH/cloud-init behavior.
 
 ## 8. Tear Down
 

@@ -65,6 +65,9 @@ VM_IP_TIMEOUT_SECONDS="${CHAMICORE_VM_IP_TIMEOUT_SECONDS:-180}"
 VM_LOGIN_PROMPT_TIMEOUT_SECONDS="${CHAMICORE_VM_LOGIN_PROMPT_TIMEOUT_SECONDS:-60}"
 VM_SSH_TIMEOUT_SECONDS="${CHAMICORE_VM_SSH_TIMEOUT_SECONDS:-180}"
 VM_SSH_LOGIN_TIMEOUT_SECONDS="${CHAMICORE_VM_SSH_LOGIN_TIMEOUT_SECONDS:-180}"
+PXE_GATEWAY_FETCH_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_GATEWAY_FETCH_TIMEOUT_SECONDS:-120}"
+PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS:-180}"
+PXE_CONSOLE_CAPTURE_STEP_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CAPTURE_STEP_SECONDS:-20}"
 VM_SSH_PORT="${CHAMICORE_VM_SSH_PORT:-22}"
 VM_SSH_USER="${CHAMICORE_VM_SSH_USER:-${CHAMICORE_VM_CLOUD_INIT_USER:-chamicore}}"
 VM_SSH_PASSWORD="${CHAMICORE_VM_SSH_PASSWORD:-${CHAMICORE_VM_CLOUD_INIT_PASSWORD:-chamicore}}"
@@ -239,6 +242,111 @@ kea_command() {
     -H "Content-Type: application/json" \
     -d "${payload}" \
     "${KEA_ENDPOINT}"
+}
+
+gateway_logs() {
+  local deploy_dir="${REPO_ROOT}/shared/chamicore-deploy"
+  local -a compose_files=(
+    -f docker-compose.yml
+    -f docker-compose.override.yml
+  )
+
+  (
+    cd "${deploy_dir}" && \
+      docker compose "${compose_files[@]}" logs --no-color gateway 2>/dev/null
+  )
+}
+
+validate_gateway_bootscript_fetch() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  log "verifying gateway bootscript fetch for MAC ${LOWER_MAC}"
+  local deadline
+  deadline="$((SECONDS + PXE_GATEWAY_FETCH_TIMEOUT_SECONDS))"
+  local logs=""
+
+  while (( SECONDS < deadline )); do
+    logs="$(gateway_logs)"
+    local encoded_mac_upper encoded_mac_lower bootscript_lines matched_lines success_lines
+    encoded_mac_upper="${LOWER_MAC//:/%3A}"
+    encoded_mac_lower="${LOWER_MAC//:/%3a}"
+    bootscript_lines="$(printf '%s\n' "${logs}" | grep '/boot/v1/bootscript' || true)"
+    matched_lines="$(printf '%s\n' "${bootscript_lines}" | grep -Ei "mac=(${LOWER_MAC}|${encoded_mac_upper}|${encoded_mac_lower})" || true)"
+    success_lines="$(printf '%s\n' "${matched_lines}" | grep -E 'status=200|\" 200 ' || true)"
+
+    if [[ -n "${success_lines}" ]]; then
+      log "gateway served bootscript for MAC ${LOWER_MAC}"
+      return 0
+    fi
+    sleep 2
+  done
+
+  local reservations_json leases_json
+  reservations_json="$(kea_command "reservation-get-all" || true)"
+  leases_json="$(kea_command "lease4-get-all" || true)"
+  printf '%s\n' "${logs}" | tail -n 200 >&2 || true
+  printf '[check-local-node-boot-vm] kea reservation snapshot: %s\n' "${reservations_json:-<unavailable>}" >&2
+  printf '[check-local-node-boot-vm] kea lease snapshot: %s\n' "${leases_json:-<unavailable>}" >&2
+  fail "did not observe successful gateway bootscript fetch for MAC ${LOWER_MAC} within ${PXE_GATEWAY_FETCH_TIMEOUT_SECONDS}s"
+}
+
+capture_console_chunk() {
+  local capture_seconds="$1"
+  timeout "${capture_seconds}s" \
+    bash -lc "printf '\n' | script -qec 'virsh console ${VM_NAME}' /dev/null" 2>&1 || true
+}
+
+validate_pxe_chain_console() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  log "verifying PXE chain on serial console (iPXE -> Linux)"
+  local deadline
+  deadline="$((SECONDS + PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS))"
+  local saw_ipxe="false"
+  local saw_linux="false"
+  local console_output=""
+
+  while (( SECONDS < deadline )); do
+    local remaining capture_window chunk
+    remaining="$((deadline - SECONDS))"
+    capture_window="${PXE_CONSOLE_CAPTURE_STEP_SECONDS}"
+    if (( capture_window > remaining )); then
+      capture_window="${remaining}"
+    fi
+    if (( capture_window <= 0 )); then
+      break
+    fi
+
+    chunk="$(capture_console_chunk "${capture_window}")"
+    if [[ -n "${chunk}" ]]; then
+      console_output+=$'\n'"${chunk}"
+    fi
+
+    if [[ "${saw_ipxe}" != "true" ]] && printf '%s\n' "${console_output}" | grep -Eiq 'iPXE|PXE-E|Booting from ROM'; then
+      saw_ipxe="true"
+      log "observed iPXE marker on serial console"
+    fi
+    if [[ "${saw_linux}" != "true" ]] && printf '%s\n' "${console_output}" | grep -Eiq 'Linux version|Kernel command line|EFI stub|Decompressing Linux|Starting kernel|Debian GNU/Linux installer'; then
+      saw_linux="true"
+      log "observed Linux kernel marker on serial console"
+    fi
+
+    if [[ "${saw_ipxe}" == "true" && "${saw_linux}" == "true" ]]; then
+      log "serial console confirms PXE chain reached Linux kernel"
+      return 0
+    fi
+    sleep 2
+  done
+
+  printf '%s\n' "${console_output}" | tail -n 200 >&2 || true
+  if [[ "${saw_ipxe}" != "true" ]]; then
+    fail "serial console did not show iPXE markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
+  fi
+  fail "serial console showed iPXE but no Linux kernel handoff marker within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
 }
 
 validate_pxe_dhcp_flow() {
@@ -432,6 +540,7 @@ boot_vm() {
       CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
       CHAMICORE_VM_SKIP_COMPOSE=true \
       CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
+      CHAMICORE_VM_MAC="${MAC}" \
       CHAMICORE_VM_RECREATE="${VM_RECREATE}" \
       CHAMICORE_VM_CLOUD_INIT_ENABLE="${VM_CLOUD_INIT_ENABLE}" \
       CHAMICORE_VM_CLOUD_INIT_USER="${VM_CLOUD_INIT_USER}" \
@@ -640,6 +749,8 @@ main() {
   exercise_bootparam_workflow
   validate_boot_path
   boot_vm
+  validate_gateway_bootscript_fetch
+  validate_pxe_chain_console
   validate_pxe_dhcp_flow
   validate_guest_runtime
 
