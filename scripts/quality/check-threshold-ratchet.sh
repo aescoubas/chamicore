@@ -53,6 +53,16 @@ trap 'rm -f "$NEW_TMP" "$OLD_TMP"' EXIT
 
 normalize_thresholds "$THRESHOLDS_FILE" > "$NEW_TMP"
 
+if [[ "$THRESHOLDS_FILE_REL" == "quality/thresholds.txt" ]]; then
+    while IFS=$'\t' read -r metric scope value; do
+        [[ "$metric" == "coverage" ]] || continue
+        if ! awk -v threshold="$value" 'BEGIN { exit !(threshold + 0 >= 100.0) }'; then
+            echo "policy violation: coverage threshold for $scope is below strict minimum: $value" >&2
+            exit 1
+        fi
+    done < "$NEW_TMP"
+fi
+
 if ! git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "not a git repository, skipping ratchet check"
     exit 0

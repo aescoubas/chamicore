@@ -1854,7 +1854,7 @@ every 5 minutes instead of every 30 seconds) as a consistency backstop.
 - [x] Services start and work correctly even if NATS is unavailable (graceful degradation)
 - [x] Integration tests verify event-driven sync latency is < 5 seconds
 - [ ] 100% test coverage maintained
-- [ ] `golangci-lint run` passes
+- [x] `golangci-lint run` passes
 
 ### P7.6: NATS in deployment stack [x]
 
@@ -2866,3 +2866,44 @@ Validation evidence:
 3. `golangci-lint run ./...` passes in `services/chamicore-power`.
 4. Coverage threshold policy now includes `services/chamicore-power` (`quality/thresholds.txt`), and `scripts/quality/check-coverage-thresholds.sh` validates it.
 5. Root smoke suite now includes a power transition workflow test in `tests/smoke/power_test.go`, and operational workflow docs include power commands in `docs/workflows.md`.
+
+### Quality Closure Update (2026-02-25)
+
+This pass applied the strict quality policy restoration plan and advanced P7.5 quality closure.
+
+Completed in this pass:
+1. Restored strict coverage thresholds to `100.0` for all tracked Go modules in `quality/thresholds.txt`.
+2. Added a strict-policy guard in `scripts/quality/check-threshold-ratchet.sh`:
+   - if `quality/thresholds.txt` contains any coverage threshold below `100.0`, the ratchet check fails.
+3. Closed P7.5 lint criterion for target repos:
+   - `services/chamicore-bss`: `golangci-lint run ./...` passes.
+   - `services/chamicore-cloud-init`: `golangci-lint run ./...` passes.
+4. Increased P7.5 repo coverage with targeted test additions and sync-path branch coverage:
+   - `services/chamicore-bss`: **83.7% -> 89.3%**.
+   - `services/chamicore-cloud-init`: **88.8% -> 94.2%**.
+5. Added/expanded tests in:
+   - `services/chamicore-bss/internal/sync/*_test.go`
+   - `services/chamicore-bss/internal/metrics/resources_test.go`
+   - `services/chamicore-cloud-init/internal/sync/*_test.go`
+   - `services/chamicore-cloud-init/internal/metrics/resources_test.go`
+6. Reduced dead/unreachable sync error branches by simplifying deterministic helpers:
+   - `computeResourceListETag` in BSS/Cloud-Init syncers now returns string directly.
+   - `defaultMetaData` in Cloud-Init syncer now returns deterministic JSON without impossible fallback branch.
+
+Validation evidence:
+1. `./scripts/quality/check-threshold-ratchet.sh quality/thresholds.txt` passes.
+2. `./scripts/quality/check-coverage-thresholds.sh quality/thresholds.txt` fails as expected until full strict closure is reached.
+3. Current strict coverage gate output:
+   - `services/chamicore-smd`: `85.9%`
+   - `services/chamicore-bss`: `89.3%`
+   - `services/chamicore-cli`: `86.7%`
+   - `services/chamicore-cloud-init`: `94.2%`
+   - `services/chamicore-discovery`: `84.8%`
+   - `services/chamicore-power`: `54.3%`
+   - `services/chamicore-kea-sync`: `99.5%`
+   - `services/chamicore-auth`: `85.1%`
+   - `shared/chamicore-lib`: `98.0%`
+
+Remaining open for strict closure:
+1. P7.5 coverage criterion (`100% test coverage maintained`) remains open.
+2. Repo-wide strict `100%` coverage closure remains open across the modules listed above.
