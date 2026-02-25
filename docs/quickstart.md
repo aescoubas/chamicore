@@ -90,13 +90,31 @@ export CHAMICORE_TOKEN=<jwt>
 
 ## 7. Optional: End-to-End VM Boot Validation
 
-Run the built-in verification script (creates a node, boot params, cloud-init payload, validates boot endpoints, then boots a libvirt VM). `make compose-vm-up` also starts the shared Sushy emulator used by local power workflows:
+Run the built-in verification script (creates a node, assigns it to an SMD group, creates and mutates boot params, creates cloud-init payload, validates boot endpoints, boots a libvirt VM, then verifies guest login prompt/SSH reachability/cloud-init completion). `make compose-vm-up` also starts the shared Sushy emulator used by local power workflows:
 
 ```bash
 ./scripts/check-local-node-boot-vm.sh
 ```
 
-Requirements for this step: `virsh`, `virt-install`, and `qemu-img`.
+Requirements for this step: `virsh`, `virt-install`, `qemu-img`, `ssh`, `sshpass`, `nc`, and `script`.
+
+By default, guest runtime checks use `CHAMICORE_TEST_VM_NETWORK=default` with the VM cloud-init credentials `chamicore` / `chamicore` (the libvirt helper now defaults to an Ubuntu cloud image with cloud-init seed data).
+
+Override as needed:
+
+```bash
+export CHAMICORE_TEST_VM_NETWORK=default
+export CHAMICORE_VM_SSH_USER=chamicore
+export CHAMICORE_VM_SSH_PASSWORD=chamicore
+```
+
+If your guest image does not expose SSH, either switch image/credentials or disable strict guest checks:
+
+```bash
+export CHAMICORE_VM_GUEST_CHECKS=false
+# optional: allow SSH/cloud-init checks without requiring serial login prompt detection
+export CHAMICORE_VM_REQUIRE_CONSOLE_LOGIN_PROMPT=false
+```
 
 ## 8. Tear Down
 

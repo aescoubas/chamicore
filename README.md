@@ -68,8 +68,8 @@ export CHAMICORE_ENDPOINT=http://localhost:8080
 
 # Start the full stack + Sushy emulator and boot a libvirt VM (requires libvirt tooling)
 make compose-vm-up
-# Optional: use a libvirt network instead of user-mode networking
-# CHAMICORE_VM_NETWORK=default make compose-vm-up
+# Optional: override defaults (network, cloud-init user/password, image)
+# CHAMICORE_VM_NETWORK=default CHAMICORE_VM_CLOUD_INIT_USER=chamicore CHAMICORE_VM_CLOUD_INIT_PASSWORD=chamicore make compose-vm-up
 
 # Run tests
 make test
