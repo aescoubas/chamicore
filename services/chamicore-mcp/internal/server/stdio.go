@@ -85,6 +85,7 @@ func RunStdio(
 	out io.Writer,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
@@ -121,7 +122,7 @@ func RunStdio(
 			continue
 		}
 
-		resp := handleRPCRequest(ctx, req, registry, authorizer, caller, version, logger)
+		resp := handleRPCRequest(ctx, req, registry, authorizer, sessionAuth, caller, version, logger)
 		if err := writeRPC(writer, resp); err != nil {
 			return err
 		}
@@ -155,6 +156,7 @@ func handleRPCRequest(
 	req rpcRequest,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
@@ -225,7 +227,22 @@ func handleRPCRequest(
 			}
 			return response
 		}
+		principal, err := authenticateStdioToolCall(sessionAuth)
+		if err != nil {
+			response.Error = &rpcError{
+				Code:    rpcCodeInvalidParams,
+				Message: err.Error(),
+			}
+			return response
+		}
 		if err := policy.RequireConfirmation(tool.Name, tool.ConfirmationRequired, params.Arguments); err != nil {
+			response.Error = &rpcError{
+				Code:    rpcCodeInvalidParams,
+				Message: err.Error(),
+			}
+			return response
+		}
+		if err := requireToolScopes(tool, principal); err != nil {
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
 				Message: err.Error(),
@@ -266,4 +283,11 @@ func handleRPCRequest(
 		}
 		return response
 	}
+}
+
+func authenticateStdioToolCall(authn SessionAuthenticator) (SessionPrincipal, error) {
+	if authn == nil {
+		return SessionPrincipal{}, fmt.Errorf("%w; set CHAMICORE_MCP_TOKEN or CHAMICORE_TOKEN", ErrSessionTokenMissing)
+	}
+	return authn.AuthenticateStdio()
 }

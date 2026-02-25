@@ -25,7 +25,7 @@ func TestRunStdio_InitializeListAndCall(t *testing.T) {
 	in := bytes.NewBufferString(input)
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), mustSessionAuthForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -60,7 +60,7 @@ func TestRunStdio_UnknownMethod(t *testing.T) {
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"nope","params":{}}` + "\n")
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), mustSessionAuthForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	var resp rpcResponse
@@ -85,7 +85,7 @@ tools:
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"smd.groups.members.add","arguments":{"label":"g","members":["x0"]}}}` + "\n")
 	out := &bytes.Buffer{}
 
-	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), mustSessionAuthForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, runErr)
 
 	var resp rpcResponse
@@ -112,7 +112,7 @@ tools:
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"bss.bootparams.delete","arguments":{"component_id":"x0"}}}` + "\n")
 	out := &bytes.Buffer{}
 
-	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), mustSessionAuthForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, runErr)
 
 	var resp rpcResponse
@@ -139,12 +139,56 @@ tools:
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"bss.bootparams.delete","arguments":{"component_id":"x0","confirm":true}}}` + "\n")
 	out := &bytes.Buffer{}
 
-	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), mustSessionAuthForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, runErr)
 
 	var resp rpcResponse
 	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
 	require.Nil(t, resp.Error)
+}
+
+func TestRunStdio_DeniesWhenSessionTokenMissing(t *testing.T) {
+	registry := mustTestRegistry(t)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cluster.health_summary","arguments":{}}}` + "\n")
+	out := &bytes.Buffer{}
+
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), NewTokenSessionAuthenticator(""), nil, "test-version", zerolog.Nop())
+	require.NoError(t, runErr)
+
+	var resp rpcResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.NotNil(t, resp.Error)
+	require.Equal(t, rpcCodeInvalidParams, resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "mcp session token is not configured")
+}
+
+func TestRunStdio_DeniesWhenScopeMissing(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: cluster.health_summary
+    capability: read
+    requiredScopes: [admin]
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	token := testJWTToken(t, "cli-agent", []string{"read:components"})
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cluster.health_summary","arguments":{}}}` + "\n")
+	out := &bytes.Buffer{}
+
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), NewTokenSessionAuthenticator(token), nil, "test-version", zerolog.Nop())
+	require.NoError(t, runErr)
+
+	var resp rpcResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.NotNil(t, resp.Error)
+	require.Equal(t, rpcCodeInvalidParams, resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "missing required scope(s): admin")
 }
 
 func mustTestRegistry(t *testing.T) *ToolRegistry {
@@ -175,4 +219,9 @@ func mustReadWriteGuardForStdio(t *testing.T) *policy.Guard {
 	guard, err := policy.NewGuard(policy.ModeReadWrite, true)
 	require.NoError(t, err)
 	return guard
+}
+
+func mustSessionAuthForStdio(t *testing.T) SessionAuthenticator {
+	t.Helper()
+	return NewTokenSessionAuthenticator("stdio-session-token")
 }

@@ -86,6 +86,7 @@ func main() {
 	} else {
 		logger.Info().Str("token_source", string(resolvedToken.Source)).Msg("resolved upstream token source")
 	}
+	sessionAuth := server.NewTokenSessionAuthenticator(resolvedToken.Token)
 	logger.Info().Str("mode", modeGuard.Mode()).Bool("write_enabled", cfg.EnableWrite).Msg("execution policy initialized")
 
 	toolRunner, err := tools.NewRunner(tools.Config{
@@ -102,14 +103,14 @@ func main() {
 
 	switch cfg.Transport {
 	case config.TransportStdio:
-		if runErr := server.RunStdio(ctx, os.Stdin, os.Stdout, registry, modeGuard, toolRunner, version, logger); runErr != nil {
+		if runErr := server.RunStdio(ctx, os.Stdin, os.Stdout, registry, modeGuard, sessionAuth, toolRunner, version, logger); runErr != nil {
 			logger.Error().Err(runErr).Msg("stdio runtime stopped with error")
 			os.Exit(1)
 		}
 		logger.Info().Msg("stdio runtime stopped")
 
 	case config.TransportHTTP:
-		httpServer := server.NewHTTPServer(cfg, version, commit, buildDate, api.ToolsContract, registry, modeGuard, toolRunner, logger)
+		httpServer := server.NewHTTPServer(cfg, version, commit, buildDate, api.ToolsContract, registry, modeGuard, sessionAuth, toolRunner, logger)
 		srv := &http.Server{
 			Addr:              cfg.ListenAddr,
 			Handler:           httpServer.Router(),

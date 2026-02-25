@@ -24,7 +24,18 @@ func TestHTTPServer_RoutesAndSSE(t *testing.T) {
 		MetricsEnabled: true,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.Nop(),
+	)
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -59,6 +70,7 @@ func TestHTTPServer_RoutesAndSSE(t *testing.T) {
 	sseReq, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call/sse", sseReqBody)
 	require.NoError(t, err)
 	sseReq.Header.Set("Content-Type", "application/json")
+	sseReq.Header.Set("Authorization", "Bearer http-session-token")
 	sseResp, err := http.DefaultClient.Do(sseReq)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, sseResp.StatusCode)
@@ -80,7 +92,18 @@ func TestHTTPServer_CallToolUnknown(t *testing.T) {
 		Transport:  config.TransportHTTP,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.Nop(),
+	)
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -88,6 +111,7 @@ func TestHTTPServer_CallToolUnknown(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer http-session-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -114,7 +138,18 @@ tools:
 		ListenAddr: ":27774",
 		Transport:  config.TransportHTTP,
 	}
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.Nop(),
+	)
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -122,6 +157,7 @@ tools:
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer http-session-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -148,7 +184,18 @@ tools:
 		ListenAddr: ":27774",
 		Transport:  config.TransportHTTP,
 	}
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadWriteGuard(t), nil, zerolog.Nop())
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadWriteGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.Nop(),
+	)
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -156,6 +203,7 @@ tools:
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer http-session-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -163,6 +211,90 @@ tools:
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	require.Contains(t, string(body), "requires confirm=true")
+}
+
+func TestHTTPServer_DeniesWhenTokenMissing(t *testing.T) {
+	registry := mustTestRegistry(t)
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.Nop(),
+	)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"cluster.health_summary","arguments":{}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Contains(t, strings.ToLower(string(body)), "authorization")
+}
+
+func TestHTTPServer_DeniesWhenScopeMissing(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: cluster.health_summary
+    capability: read
+    requiredScopes: [admin]
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+	token := testJWTToken(t, "http-agent", []string{"read:components"})
+
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		NewTokenSessionAuthenticator(token),
+		nil,
+		zerolog.Nop(),
+	)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"cluster.health_summary","arguments":{}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Contains(t, string(body), "missing required scope(s): admin")
 }
 
 func mustReadOnlyGuard(t *testing.T) *policy.Guard {
@@ -177,4 +309,9 @@ func mustReadWriteGuard(t *testing.T) *policy.Guard {
 	guard, err := policy.NewGuard(policy.ModeReadWrite, true)
 	require.NoError(t, err)
 	return guard
+}
+
+func mustSessionAuthForHTTP(t *testing.T) SessionAuthenticator {
+	t.Helper()
+	return NewTokenSessionAuthenticator("http-session-token")
 }

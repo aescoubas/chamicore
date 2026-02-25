@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,7 @@ func registerMCPHTTPRoutes(
 	r chi.Router,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
@@ -26,8 +28,8 @@ func registerMCPHTTPRoutes(
 	r.Route("/mcp/v1", func(r chi.Router) {
 		r.Post("/initialize", handleInitializeHTTP(version))
 		r.Get("/tools", handleListToolsHTTP(registry))
-		r.Post("/tools/call", handleCallToolHTTP(registry, authorizer, caller, logger))
-		r.Post("/tools/call/sse", handleCallToolSSE(registry, authorizer, caller, logger))
+		r.Post("/tools/call", handleCallToolHTTP(registry, authorizer, sessionAuth, caller, logger))
+		r.Post("/tools/call/sse", handleCallToolSSE(registry, authorizer, sessionAuth, caller, logger))
 	})
 }
 
@@ -60,11 +62,12 @@ func handleListToolsHTTP(registry *ToolRegistry) http.HandlerFunc {
 func handleCallToolHTTP(
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 	caller ToolCaller,
 	logger zerolog.Logger,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
+		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
 		if !ok {
 			return
 		}
@@ -85,11 +88,12 @@ func handleCallToolHTTP(
 func handleCallToolSSE(
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 	caller ToolCaller,
 	logger zerolog.Logger,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
+		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
 		if !ok {
 			return
 		}
@@ -147,7 +151,15 @@ func parseCallToolRequest(
 	r *http.Request,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	sessionAuth SessionAuthenticator,
 ) (callToolParams, ToolSpec, bool) {
+	principal, err := authenticateHTTPToolCall(r, sessionAuth)
+	if err != nil {
+		status, detail := authFailureResponse(err)
+		httputil.RespondProblem(w, r, status, detail)
+		return callToolParams{}, ToolSpec{}, false
+	}
+
 	var params callToolParams
 	if err := decodeJSONStrict(r, &params); err != nil {
 		httputil.RespondProblemf(w, r, http.StatusBadRequest, "invalid request body: %v", err)
@@ -173,8 +185,35 @@ func parseCallToolRequest(
 		httputil.RespondProblem(w, r, http.StatusBadRequest, err.Error())
 		return callToolParams{}, ToolSpec{}, false
 	}
+	if err := requireToolScopes(tool, principal); err != nil {
+		httputil.RespondProblem(w, r, http.StatusForbidden, err.Error())
+		return callToolParams{}, ToolSpec{}, false
+	}
 
 	return params, tool, true
+}
+
+func authenticateHTTPToolCall(r *http.Request, authn SessionAuthenticator) (SessionPrincipal, error) {
+	if authn == nil {
+		return SessionPrincipal{}, fmt.Errorf("%w; set CHAMICORE_MCP_TOKEN or CHAMICORE_TOKEN", ErrSessionTokenMissing)
+	}
+	return authn.AuthenticateHTTP(r)
+}
+
+func authFailureResponse(err error) (int, string) {
+	if err == nil {
+		return http.StatusUnauthorized, "unauthorized"
+	}
+	switch {
+	case errors.Is(err, ErrSessionTokenMissing):
+		return http.StatusUnauthorized, "MCP session token is not configured; set CHAMICORE_MCP_TOKEN or CHAMICORE_TOKEN"
+	case errors.Is(err, ErrBearerTokenMissing):
+		return http.StatusUnauthorized, "missing or malformed Authorization header; expected Bearer <token>"
+	case errors.Is(err, ErrBearerTokenInvalid):
+		return http.StatusUnauthorized, "invalid bearer token for MCP session"
+	default:
+		return http.StatusUnauthorized, err.Error()
+	}
 }
 
 func writeSSEEvent(ctx context.Context, w http.ResponseWriter, event string, payload any) error {

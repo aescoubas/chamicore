@@ -3163,7 +3163,7 @@ Validation evidence (2026-02-25):
   2. `cd services/chamicore-mcp && go test -race ./...`
   3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.6: HTTP/SSE session auth + per-call scope evaluation [ ]
+### P9.6: HTTP/SSE session auth + per-call scope evaluation [x]
 
 **Depends on:** P9.5
 **Repo:** chamicore-mcp
@@ -3179,10 +3179,35 @@ Apply token-based auth and scope checks in both transports:
 - consistent denial responses with actionable details
 
 **Done when:**
-- [ ] HTTP/SSE mode authenticates incoming tool calls
-- [ ] stdio mode resolves token through configured source precedence
-- [ ] Tool-level scope policy is evaluated before handler execution
-- [ ] Tests cover admin token allow-path and missing-token/missing-scope failures
+- [x] HTTP/SSE mode authenticates incoming tool calls
+- [x] stdio mode resolves token through configured source precedence
+- [x] Tool-level scope policy is evaluated before handler execution
+- [x] Tests cover admin token allow-path and missing-token/missing-scope failures
+
+Validation evidence (2026-02-25):
+- Added transport session auth in `services/chamicore-mcp/internal/server/http_auth.go`:
+  - HTTP tool calls now require `Authorization: Bearer <session-token>`.
+  - stdio tool calls now require a resolved session token (from existing precedence: `CHAMICORE_MCP_TOKEN` -> `CHAMICORE_TOKEN` -> optional CLI config token).
+  - Session principal/scopes are derived from token claims when JWT-like; opaque tokens keep V1 broad-admin compatibility.
+- Added scope policy gate in `services/chamicore-mcp/internal/policy/scopes.go`:
+  - evaluates `requiredScopes` metadata per tool before execution,
+  - treats `admin` as broad allow in V1,
+  - returns actionable missing-scope errors with granted scope summary.
+- Enforced auth + scope checks in both transports before tool execution:
+  - HTTP/SSE: `services/chamicore-mcp/internal/server/http_sse.go`
+  - stdio JSON-RPC: `services/chamicore-mcp/internal/server/stdio.go`
+- Runtime wiring now initializes shared session auth from resolved token source:
+  - `services/chamicore-mcp/cmd/chamicore-mcp/main.go`
+  - `services/chamicore-mcp/internal/server/router.go`
+- Added/updated tests:
+  - `services/chamicore-mcp/internal/server/http_auth_test.go`
+  - `services/chamicore-mcp/internal/policy/scopes_test.go`
+  - `services/chamicore-mcp/internal/server/http_sse_test.go`
+  - `services/chamicore-mcp/internal/server/stdio_test.go`
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test ./...`
+  2. `cd services/chamicore-mcp && go test -race ./...`
+  3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.7: Audit logging and observability [ ]
 
