@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"git.cscs.ch/openchami/chamicore-lib/httputil"
+	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
 func registerMCPHTTPRoutes(
@@ -166,6 +167,10 @@ func parseCallToolRequest(
 	}
 	if err := authorizeToolCall(authorizer, tool); err != nil {
 		httputil.RespondProblem(w, r, http.StatusForbidden, err.Error())
+		return callToolParams{}, ToolSpec{}, false
+	}
+	if err := policy.RequireConfirmation(tool.Name, tool.ConfirmationRequired, params.Arguments); err != nil {
+		httputil.RespondProblem(w, r, http.StatusBadRequest, err.Error())
 		return callToolParams{}, ToolSpec{}, false
 	}
 

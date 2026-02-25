@@ -3105,7 +3105,7 @@ Validation evidence (2026-02-25):
   1. `cd services/chamicore-mcp && go test -race ./...`
   2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.5: Write toolset + destructive confirmation guard [ ]
+### P9.5: Write toolset + destructive confirmation guard [x]
 
 **Depends on:** P9.4
 **Repo:** chamicore-mcp
@@ -3133,10 +3133,35 @@ Destructive confirmation requirement:
   - `power.transitions.abort`
 
 **Done when:**
-- [ ] Write tools are blocked in read-only mode
-- [ ] Write tools run in read-write mode only when dual-control flags are enabled
-- [ ] Destructive tools fail with clear validation error when confirmation is absent
-- [ ] Tests cover mode denial and confirmation enforcement paths
+- [x] Write tools are blocked in read-only mode
+- [x] Write tools run in read-write mode only when dual-control flags are enabled
+- [x] Destructive tools fail with clear validation error when confirmation is absent
+- [x] Tests cover mode denial and confirmation enforcement paths
+
+Validation evidence (2026-02-25):
+- Implemented full P9.5 write toolset in `services/chamicore-mcp/internal/tools/*_write.go`:
+  - `smd.groups.members.add|remove`
+  - `bss.bootparams.upsert|delete`
+  - `cloudinit.payloads.upsert|delete`
+  - `power.transitions.create|abort|wait`
+  - `discovery.targets.create|update|delete`, `discovery.target.scan`, `discovery.scan.trigger|delete`
+- Added destructive confirmation policy in `services/chamicore-mcp/internal/policy/confirm.go`:
+  - `confirm=true` required for all `*.delete` tools
+  - `confirm=true` required for `power.transitions.abort`
+  - `confirm=true` required for `power.transitions.create` when operation is
+    `ForceOff`, `GracefulShutdown`, `ForceRestart`, `GracefulRestart`, or `Nmi`
+- Enforced confirmation guard in both transports before tool execution:
+  - stdio path: `services/chamicore-mcp/internal/server/stdio.go`
+  - HTTP/SSE path: `services/chamicore-mcp/internal/server/http_sse.go`
+- Added/updated tests:
+  - `services/chamicore-mcp/internal/policy/confirm_test.go`
+  - `services/chamicore-mcp/internal/server/stdio_test.go`
+  - `services/chamicore-mcp/internal/server/http_sse_test.go`
+  - `services/chamicore-mcp/internal/tools/registry_test.go`
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test ./...`
+  2. `cd services/chamicore-mcp && go test -race ./...`
+  3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.6: HTTP/SSE session auth + per-call scope evaluation [ ]
 

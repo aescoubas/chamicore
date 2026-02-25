@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog"
+
+	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
 const (
@@ -217,6 +219,13 @@ func handleRPCRequest(
 			return response
 		}
 		if err := authorizeToolCall(authorizer, tool); err != nil {
+			response.Error = &rpcError{
+				Code:    rpcCodeInvalidParams,
+				Message: err.Error(),
+			}
+			return response
+		}
+		if err := policy.RequireConfirmation(tool.Name, tool.ConfirmationRequired, params.Arguments); err != nil {
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
 				Message: err.Error(),

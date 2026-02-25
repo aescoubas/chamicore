@@ -131,9 +131,50 @@ tools:
 	require.Contains(t, strings.ToLower(string(body)), "requires read-write mode")
 }
 
+func TestHTTPServer_DestructiveToolRequiresConfirmation(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: power.transitions.create
+    capability: write
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadWriteGuard(t), nil, zerolog.Nop())
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"power.transitions.create","arguments":{"operation":"ForceOff","nodes":["x0"]}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Contains(t, string(body), "requires confirm=true")
+}
+
 func mustReadOnlyGuard(t *testing.T) *policy.Guard {
 	t.Helper()
 	guard, err := policy.NewGuard(policy.ModeReadOnly, false)
+	require.NoError(t, err)
+	return guard
+}
+
+func mustReadWriteGuard(t *testing.T) *policy.Guard {
+	t.Helper()
+	guard, err := policy.NewGuard(policy.ModeReadWrite, true)
 	require.NoError(t, err)
 	return guard
 }

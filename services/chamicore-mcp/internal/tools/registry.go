@@ -26,7 +26,7 @@ import (
 
 const defaultHealthTimeout = 5 * time.Second
 
-// Config configures client endpoints for read tools.
+// Config configures client endpoints for MCP tools.
 type Config struct {
 	AuthURL      string
 	SMDURL       string
@@ -41,11 +41,11 @@ type Runner struct {
 	healthClient *http.Client
 	healthTarget []serviceHealthTarget
 
-	smd       smdReadClient
-	bss       bssReadClient
-	cloudInit cloudReadClient
-	discovery discoveryReadClient
-	power     powerReadClient
+	smd       smdClient
+	bss       bssClient
+	cloudInit cloudClient
+	discovery discoveryToolClient
+	power     powerClient
 }
 
 type serviceHealthTarget struct {
@@ -53,33 +53,50 @@ type serviceHealthTarget struct {
 	URL  string
 }
 
-type smdReadClient interface {
+type smdClient interface {
 	ListComponents(ctx context.Context, opts smdclient.ComponentListOptions) (*httputil.ResourceList[smdtypes.Component], error)
 	GetComponent(ctx context.Context, id string) (*httputil.Resource[smdtypes.Component], error)
 	ListGroups(ctx context.Context, opts smdclient.GroupListOptions) (*httputil.ResourceList[smdtypes.Group], error)
 	GetGroup(ctx context.Context, name string) (*httputil.Resource[smdtypes.Group], error)
+	AddGroupMembers(ctx context.Context, name string, req smdtypes.AddMembersRequest) error
+	RemoveGroupMember(ctx context.Context, name, componentID string) error
 }
 
-type bssReadClient interface {
+type bssClient interface {
 	List(ctx context.Context, opts bssclient.ListOptions) (*httputil.ResourceList[bsstypes.BootParam], error)
+	Create(ctx context.Context, req bsstypes.CreateBootParamRequest) (*httputil.Resource[bsstypes.BootParam], error)
+	Patch(ctx context.Context, id string, req bsstypes.PatchBootParamRequest) (*httputil.Resource[bsstypes.BootParam], error)
+	Delete(ctx context.Context, id string) error
 }
 
-type cloudReadClient interface {
+type cloudClient interface {
 	List(ctx context.Context, opts cloudclient.ListOptions) (*httputil.ResourceList[cloudtypes.Payload], error)
+	Create(ctx context.Context, req cloudtypes.CreatePayloadRequest) (*httputil.Resource[cloudtypes.Payload], error)
+	Patch(ctx context.Context, id string, req cloudtypes.PatchPayloadRequest) (*httputil.Resource[cloudtypes.Payload], error)
+	Delete(ctx context.Context, id string) error
 }
 
-type powerReadClient interface {
+type powerClient interface {
 	GetPowerStatus(ctx context.Context, opts powerclient.PowerStatusOptions) (*httputil.Resource[powertypes.PowerStatus], error)
 	ListTransitions(ctx context.Context, opts powerclient.ListTransitionsOptions) (*httputil.ResourceList[powertypes.Transition], error)
 	GetTransition(ctx context.Context, id string) (*httputil.Resource[powertypes.Transition], error)
+	CreateTransition(ctx context.Context, req powertypes.CreateTransitionRequest) (*httputil.Resource[powertypes.Transition], error)
+	AbortTransition(ctx context.Context, id string) (*httputil.Resource[powertypes.Transition], error)
+	WaitTransition(ctx context.Context, id string, opts powerclient.WaitTransitionOptions) (*httputil.Resource[powertypes.Transition], error)
 }
 
-type discoveryReadClient interface {
+type discoveryToolClient interface {
 	ListTargets(ctx context.Context, limit, offset int) (*httputil.ResourceList[discoverytypes.Target], error)
 	GetTarget(ctx context.Context, id string) (*httputil.Resource[discoverytypes.Target], error)
 	ListScans(ctx context.Context, limit, offset int) (*httputil.ResourceList[discoverytypes.ScanJob], error)
 	GetScan(ctx context.Context, id string) (*httputil.Resource[discoverytypes.ScanJob], error)
 	ListDrivers(ctx context.Context) (*httputil.ResourceList[discoverytypes.DriverInfo], error)
+	CreateTarget(ctx context.Context, req discoverytypes.CreateTargetRequest) (*httputil.Resource[discoverytypes.Target], error)
+	PatchTarget(ctx context.Context, id string, req discoverytypes.PatchTargetRequest) (*httputil.Resource[discoverytypes.Target], error)
+	DeleteTarget(ctx context.Context, id string) error
+	StartTargetScan(ctx context.Context, id string) (*httputil.Resource[discoverytypes.ScanJob], error)
+	StartScan(ctx context.Context, req discoverytypes.StartScanRequest) (*httputil.Resource[discoverytypes.ScanJob], error)
+	CancelScan(ctx context.Context, id string) error
 }
 
 // ToolError carries an HTTP-style status code and message for tool failures.
@@ -104,7 +121,7 @@ func (e *ToolError) StatusCode() int {
 	return e.statusCode
 }
 
-// NewRunner creates a read-only tool runner backed by typed service clients.
+// NewRunner creates an MCP tool runner backed by typed service clients.
 func NewRunner(cfg Config, token string) (*Runner, error) {
 	smd := smdclient.New(smdclient.Config{
 		BaseURL: strings.TrimSpace(cfg.SMDURL),
@@ -155,7 +172,7 @@ func NewRunner(cfg Config, token string) (*Runner, error) {
 	}, nil
 }
 
-// Call executes one read tool by name and returns JSON-like map content.
+// Call executes one MCP tool by name and returns JSON-like map content.
 func (r *Runner) Call(ctx context.Context, name string, args map[string]any) (map[string]any, error) {
 	switch strings.TrimSpace(name) {
 	case "cluster.health_summary":
@@ -169,16 +186,28 @@ func (r *Runner) Call(ctx context.Context, name string, args map[string]any) (ma
 		return r.smdGroupsList(ctx, args)
 	case "smd.groups.get":
 		return r.smdGroupsGet(ctx, args)
+	case "smd.groups.members.add":
+		return r.smdGroupsMembersAdd(ctx, args)
+	case "smd.groups.members.remove":
+		return r.smdGroupsMembersRemove(ctx, args)
 
 	case "bss.bootparams.list":
 		return r.bssBootParamsList(ctx, args)
 	case "bss.bootparams.get":
 		return r.bssBootParamsGet(ctx, args)
+	case "bss.bootparams.upsert":
+		return r.bssBootParamsUpsert(ctx, args)
+	case "bss.bootparams.delete":
+		return r.bssBootParamsDelete(ctx, args)
 
 	case "cloudinit.payloads.list":
 		return r.cloudInitPayloadsList(ctx, args)
 	case "cloudinit.payloads.get":
 		return r.cloudInitPayloadsGet(ctx, args)
+	case "cloudinit.payloads.upsert":
+		return r.cloudInitPayloadsUpsert(ctx, args)
+	case "cloudinit.payloads.delete":
+		return r.cloudInitPayloadsDelete(ctx, args)
 
 	case "power.status.get":
 		return r.powerStatusGet(ctx, args)
@@ -186,6 +215,12 @@ func (r *Runner) Call(ctx context.Context, name string, args map[string]any) (ma
 		return r.powerTransitionsList(ctx, args)
 	case "power.transitions.get":
 		return r.powerTransitionsGet(ctx, args)
+	case "power.transitions.create":
+		return r.powerTransitionsCreate(ctx, args)
+	case "power.transitions.abort":
+		return r.powerTransitionsAbort(ctx, args)
+	case "power.transitions.wait":
+		return r.powerTransitionsWait(ctx, args)
 
 	case "discovery.targets.list":
 		return r.discoveryTargetsList(ctx, args)
@@ -197,9 +232,21 @@ func (r *Runner) Call(ctx context.Context, name string, args map[string]any) (ma
 		return r.discoveryScansGet(ctx, args)
 	case "discovery.drivers.list":
 		return r.discoveryDriversList(ctx, args)
+	case "discovery.targets.create":
+		return r.discoveryTargetsCreate(ctx, args)
+	case "discovery.targets.update":
+		return r.discoveryTargetsUpdate(ctx, args)
+	case "discovery.targets.delete":
+		return r.discoveryTargetsDelete(ctx, args)
+	case "discovery.target.scan":
+		return r.discoveryTargetScan(ctx, args)
+	case "discovery.scan.trigger":
+		return r.discoveryScanTrigger(ctx, args)
+	case "discovery.scan.delete":
+		return r.discoveryScanDelete(ctx, args)
 
 	default:
-		return nil, validationErrorf("tool %s is not implemented in read-only runner", strings.TrimSpace(name))
+		return nil, validationErrorf("tool %s is not implemented", strings.TrimSpace(name))
 	}
 }
 

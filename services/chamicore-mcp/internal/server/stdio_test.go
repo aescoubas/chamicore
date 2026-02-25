@@ -95,6 +95,58 @@ tools:
 	require.Contains(t, resp.Error.Message, "requires read-write mode")
 }
 
+func TestRunStdio_DestructiveToolRequiresConfirmation(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: bss.bootparams.delete
+    capability: write
+    confirmationRequired: true
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"bss.bootparams.delete","arguments":{"component_id":"x0"}}}` + "\n")
+	out := &bytes.Buffer{}
+
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	require.NoError(t, runErr)
+
+	var resp rpcResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.NotNil(t, resp.Error)
+	require.Equal(t, rpcCodeInvalidParams, resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "requires confirm=true")
+}
+
+func TestRunStdio_DestructiveToolWithConfirmationAllowed(t *testing.T) {
+	registry, err := NewToolRegistry([]byte(`
+version: "1.0"
+service: "chamicore-mcp"
+apiVersion: "mcp/v1"
+tools:
+  - name: bss.bootparams.delete
+    capability: write
+    confirmationRequired: true
+    inputSchema:
+      type: object
+`))
+	require.NoError(t, err)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"bss.bootparams.delete","arguments":{"component_id":"x0","confirm":true}}}` + "\n")
+	out := &bytes.Buffer{}
+
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadWriteGuardForStdio(t), nil, "test-version", zerolog.Nop())
+	require.NoError(t, runErr)
+
+	var resp rpcResponse
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	require.Nil(t, resp.Error)
+}
+
 func mustTestRegistry(t *testing.T) *ToolRegistry {
 	t.Helper()
 	registry, err := NewToolRegistry([]byte(`
@@ -114,6 +166,13 @@ tools:
 func mustReadOnlyGuardForStdio(t *testing.T) *policy.Guard {
 	t.Helper()
 	guard, err := policy.NewGuard(policy.ModeReadOnly, false)
+	require.NoError(t, err)
+	return guard
+}
+
+func mustReadWriteGuardForStdio(t *testing.T) *policy.Guard {
+	t.Helper()
+	guard, err := policy.NewGuard(policy.ModeReadWrite, true)
 	require.NoError(t, err)
 	return guard
 }
