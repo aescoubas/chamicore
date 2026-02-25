@@ -2961,7 +2961,7 @@ Validation evidence (2026-02-25):
   - conditional confirmation rules for destructive power operations.
 - `ARCHITECTURE/README.md` index now includes ADR-018 for discoverability.
 
-### P9.2: Service scaffold + configuration + dual transport runtime [ ]
+### P9.2: Service scaffold + configuration + dual transport runtime [x]
 
 **Depends on:** P9.1
 **Repo:** chamicore-mcp
@@ -2982,10 +2982,28 @@ Create service template-based scaffold with:
 - structured zerolog request/session logging
 
 **Done when:**
-- [ ] Service starts in stdio mode and handles MCP initialize/list-tools/call-tool flows
-- [ ] Service starts in HTTP/SSE mode and streams tool results
-- [ ] Health/readiness/version endpoints conform to existing conventions
-- [ ] Service passes `go test -race ./...` and `golangci-lint run ./...`
+- [x] Service starts in stdio mode and handles MCP initialize/list-tools/call-tool flows
+- [x] Service starts in HTTP/SSE mode and streams tool results
+- [x] Health/readiness/version endpoints conform to existing conventions
+- [x] Service passes `go test -race ./...` and `golangci-lint run ./...`
+
+Validation evidence (2026-02-25):
+- Added new Go module scaffold at `services/chamicore-mcp` with:
+  - `cmd/chamicore-mcp/main.go` transport-selecting runtime (`stdio` or HTTP/SSE),
+  - `internal/config/config.go` (`CHAMICORE_MCP_TRANSPORT`, listen/log/otel toggles),
+  - `internal/server/stdio.go` JSON-RPC handling for `initialize`, `tools/list`, `tools/call`,
+  - `internal/server/http_sse.go` HTTP MCP endpoints and SSE streaming tool-call path,
+  - `internal/server/router.go` middleware stack + MCP route wiring,
+  - `internal/server/health.go` standard `GET /health`, `/readiness`, `/version`, `/metrics`,
+  - `api/spec.go` embedded `api/tools.yaml`.
+- Added unit tests:
+  - `internal/config/config_test.go`
+  - `internal/server/contract_test.go`
+  - `internal/server/stdio_test.go`
+  - `internal/server/http_sse_test.go`
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test -race ./...`
+  2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.3: Auth/token source strategy + mode gate policy [ ]
 
