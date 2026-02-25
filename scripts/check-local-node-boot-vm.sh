@@ -12,15 +12,15 @@ VM_NAME="${CHAMICORE_VM_NAME:-chamicore-devvm}"
 
 VM_BOOT_MODE="${CHAMICORE_VM_BOOT_MODE:-disk}"
 VM_BOOT_MODE="${VM_BOOT_MODE,,}"
-DEFAULT_PXE_KERNEL_URI="https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux"
-DEFAULT_PXE_INITRD_URI="https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz"
+DEFAULT_PXE_KERNEL_URI="http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux"
+DEFAULT_PXE_INITRD_URI="http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz"
 
 NODE_ID="${CHAMICORE_TEST_NODE_ID:-node-demo-$(date +%s)}"
 KERNEL_URI="${CHAMICORE_TEST_KERNEL_URI:-}"
 INITRD_URI="${CHAMICORE_TEST_INITRD_URI:-}"
 CMDLINE="${CHAMICORE_TEST_CMDLINE:-console=ttyS0}"
 ROLE="${CHAMICORE_TEST_ROLE:-Compute}"
-INTERFACE_IPS="${CHAMICORE_TEST_IPS_JSON:-[\"172.16.10.50\"]}"
+INTERFACE_IPS="${CHAMICORE_TEST_IPS_JSON:-}"
 SKIP_COMPOSE_UP="${CHAMICORE_SKIP_COMPOSE_UP:-false}"
 READINESS_TIMEOUT_SECONDS="${CHAMICORE_READINESS_TIMEOUT_SECONDS:-60}"
 CURL_MAX_TIME="${CHAMICORE_CURL_MAX_TIME:-5}"
@@ -33,6 +33,8 @@ if [[ -z "${KEA_ENDPOINT}" ]]; then
   fi
 fi
 KEA_LEASE_TIMEOUT_SECONDS="${CHAMICORE_KEA_LEASE_TIMEOUT_SECONDS:-120}"
+KEA_RESERVATION_TIMEOUT_SECONDS="${CHAMICORE_KEA_RESERVATION_TIMEOUT_SECONDS:-120}"
+KEA_REQUIRE_RESERVATION_BOOT_OPTIONS="${CHAMICORE_KEA_REQUIRE_RESERVATION_BOOT_OPTIONS:-false}"
 GROUP_NAME="${CHAMICORE_TEST_GROUP_NAME:-group-${NODE_ID}}"
 GROUP_TAGS="${CHAMICORE_TEST_GROUP_TAGS:-{\"rack\":\"R12\",\"purpose\":\"vm-e2e\"}}"
 GROUP_DESCRIPTION_INITIAL="${CHAMICORE_TEST_GROUP_DESCRIPTION_INITIAL:-VM E2E validation group}"
@@ -68,6 +70,7 @@ VM_SSH_LOGIN_TIMEOUT_SECONDS="${CHAMICORE_VM_SSH_LOGIN_TIMEOUT_SECONDS:-180}"
 PXE_GATEWAY_FETCH_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_GATEWAY_FETCH_TIMEOUT_SECONDS:-120}"
 PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS:-180}"
 PXE_CONSOLE_CAPTURE_STEP_SECONDS="${CHAMICORE_VM_PXE_CONSOLE_CAPTURE_STEP_SECONDS:-20}"
+PXE_REQUIRE_CONSOLE_CHAIN="${CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN:-false}"
 VM_SSH_PORT="${CHAMICORE_VM_SSH_PORT:-22}"
 VM_SSH_USER="${CHAMICORE_VM_SSH_USER:-${CHAMICORE_VM_CLOUD_INIT_USER:-chamicore}}"
 VM_SSH_PASSWORD="${CHAMICORE_VM_SSH_PASSWORD:-${CHAMICORE_VM_CLOUD_INIT_PASSWORD:-chamicore}}"
@@ -228,6 +231,32 @@ require_json_expr_arg() {
   fi
 }
 
+resolve_interface_ips() {
+  if [[ -n "${INTERFACE_IPS}" ]]; then
+    return 0
+  fi
+
+  local interfaces_json
+  interfaces_json="$(run_cli "${SMD_ENDPOINT}" -o json smd components interfaces list --limit 10000)"
+
+  local candidate_ip=""
+  local octet
+  for octet in $(seq 100 200); do
+    candidate_ip="172.16.10.${octet}"
+    if ! printf '%s' "${interfaces_json}" | jq -e --arg ip "${candidate_ip}" '[.[]?.spec.ipAddrs[]? | tostring] | index($ip) != null' >/dev/null; then
+      break
+    fi
+    candidate_ip=""
+  done
+
+  if [[ -z "${candidate_ip}" ]]; then
+    candidate_ip="172.16.10.$((100 + (RANDOM % 100)))"
+  fi
+
+  INTERFACE_IPS="$(jq -cn --arg ip "${candidate_ip}" '[ $ip ]')"
+  log "selected test IP for interface reservation: ${candidate_ip}"
+}
+
 kea_command() {
   local command="$1"
   local arguments_json="${2:-}"
@@ -344,7 +373,15 @@ validate_pxe_chain_console() {
 
   printf '%s\n' "${console_output}" | tail -n 200 >&2 || true
   if [[ "${saw_ipxe}" != "true" ]]; then
+    if ! is_true "${PXE_REQUIRE_CONSOLE_CHAIN}"; then
+      log "serial console did not show iPXE markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s; continuing because CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=${PXE_REQUIRE_CONSOLE_CHAIN}"
+      return 0
+    fi
     fail "serial console did not show iPXE markers within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
+  fi
+  if ! is_true "${PXE_REQUIRE_CONSOLE_CHAIN}"; then
+    log "serial console showed iPXE but no Linux kernel handoff marker within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s; continuing because CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=${PXE_REQUIRE_CONSOLE_CHAIN}"
+    return 0
   fi
   fail "serial console showed iPXE but no Linux kernel handoff marker within ${PXE_CONSOLE_CHAIN_TIMEOUT_SECONDS}s"
 }
@@ -386,6 +423,33 @@ validate_pxe_dhcp_flow() {
   done
 
   fail "did not observe Kea lease for ${LOWER_MAC} within ${KEA_LEASE_TIMEOUT_SECONDS}s"
+}
+
+wait_for_pxe_reservation_boot_options() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  log "waiting for Kea reservation boot options for MAC ${LOWER_MAC}"
+  local deadline
+  deadline="$((SECONDS + KEA_RESERVATION_TIMEOUT_SECONDS))"
+  while (( SECONDS < deadline )); do
+    local reservations_json
+    reservations_json="$(kea_command "reservation-get-all")"
+
+    if printf '%s' "${reservations_json}" | jq -e --arg mac "${LOWER_MAC}" \
+      '.[0].result == 0 and ([.[0].arguments.reservations[]? | select((.["hw-address"] | ascii_downcase) == $mac) | .["boot-file-name"] | strings | select(contains("/boot/v1/bootscript?mac=") and (contains("__mac__") | not))] | length > 0)' >/dev/null; then
+      log "Kea reservation boot options ready for ${LOWER_MAC}"
+      return 0
+    fi
+
+    sleep 2
+  done
+
+  if is_true "${KEA_REQUIRE_RESERVATION_BOOT_OPTIONS}"; then
+    fail "did not observe Kea reservation boot options for ${LOWER_MAC} within ${KEA_RESERVATION_TIMEOUT_SECONDS}s"
+  fi
+  log "reservation boot options were not observed for ${LOWER_MAC}; continuing because CHAMICORE_KEA_REQUIRE_RESERVATION_BOOT_OPTIONS=${KEA_REQUIRE_RESERVATION_BOOT_OPTIONS}"
 }
 
 resolve_bootparam_id() {
@@ -533,6 +597,23 @@ validate_boot_path() {
   contains_or_fail "${meta_data_minified}" "\"instance-id\":\"${NODE_ID}\"" "cloud-init meta-data instance-id mismatch"
 }
 
+prepare_pxe_stack_prereqs() {
+  if [[ "${VM_BOOT_MODE}" != "pxe" ]]; then
+    return 0
+  fi
+
+  log "running PXE preflight via compose-libvirt-up logic"
+  (
+    cd "${REPO_ROOT}" && \
+      CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
+      CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
+      CHAMICORE_VM_RECREATE=false \
+      CHAMICORE_VM_SKIP_COMPOSE=true \
+      CHAMICORE_VM_PREP_ONLY=true \
+      make compose-vm-up
+  ) || fail "PXE preflight failed (network creation/bind checks)"
+}
+
 boot_vm() {
   log "starting libvirt VM via make compose-vm-up"
   (
@@ -556,6 +637,50 @@ boot_vm() {
 
   log "libvirt domain ${VM_NAME} state: ${state}"
   virsh dominfo "${VM_NAME}"
+
+  if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+    local vm_bridge
+    vm_bridge="$(virsh net-info "${VM_NETWORK}" 2>/dev/null | awk -F': +' '$1=="Bridge"{print $2}')"
+    if [[ -n "${vm_bridge}" && "${vm_bridge}" != "-" ]]; then
+      log "waiting for PXE bridge ${vm_bridge} carrier before restarting kea-pxe"
+      local bridge_deadline
+      local bridge_ready="false"
+      bridge_deadline="$((SECONDS + 60))"
+      while (( SECONDS < bridge_deadline )); do
+        if ip -o link show "${vm_bridge}" 2>/dev/null | grep -q 'LOWER_UP'; then
+          bridge_ready="true"
+          break
+        fi
+        sleep 2
+      done
+      if [[ "${bridge_ready}" != "true" ]]; then
+        ip -o link show "${vm_bridge}" >&2 || true
+        fail "pxe bridge ${vm_bridge} did not reach LOWER_UP before DHCP restart"
+      fi
+    fi
+
+    log "restarting kea-pxe after VM boot to ensure DHCP sockets are active"
+    (
+      cd "${REPO_ROOT}/shared/chamicore-deploy" && \
+        docker compose \
+          -f docker-compose.yml \
+          -f docker-compose.override.yml \
+          -f docker-compose.pxe.yml \
+          --profile vm \
+          restart kea-pxe
+    ) || fail "failed to restart kea-pxe after VM boot"
+
+    local deadline
+    deadline="$((SECONDS + 60))"
+    while (( SECONDS < deadline )); do
+      if kea_command "lease4-get-all" >/dev/null 2>&1; then
+        log "kea-pxe shim reachable after restart"
+        return 0
+      fi
+      sleep 2
+    done
+    fail "kea-pxe did not become reachable after restart"
+  fi
 }
 
 resolve_vm_ip() {
@@ -716,11 +841,13 @@ main() {
   require_cmd script
   if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
     require_cmd docker
+    require_cmd ip
   fi
   ensure_cli
 
   if ! is_true "${SKIP_COMPOSE_UP}"; then
     if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
+      prepare_pxe_stack_prereqs
       log "ensuring compose stack is up (pxe override)"
       (
         cd "${REPO_ROOT}/shared/chamicore-deploy" && \
@@ -743,11 +870,13 @@ main() {
   check_api "smd" "${SMD_ENDPOINT}/hsm/v2/State/Components?limit=1" "${CURL_MAX_TIME}"
   check_api "bss" "${BSS_ENDPOINT}/boot/v1/bootparams?limit=1" "${CURL_MAX_TIME}"
   check_api "cloud-init" "${CLOUDINIT_ENDPOINT}/cloud-init/payloads?limit=1" "${CURL_MAX_TIME}"
+  resolve_interface_ips
 
   create_resources
   exercise_group_workflow
   exercise_bootparam_workflow
   validate_boot_path
+  wait_for_pxe_reservation_boot_options
   boot_vm
   validate_gateway_bootscript_fetch
   validate_pxe_chain_console

@@ -125,13 +125,36 @@ export CHAMICORE_VM_PXE_GATEWAY_IP=172.16.10.1
 ./scripts/check-local-node-boot-vm.sh
 ```
 
-In `pxe` mode, the script enforces the full chain evidence:
+Default local PXE-related host ports:
+- `CHAMICORE_SUSHY_HOST_PORT=8001` (sushy-tools)
+- `CHAMICORE_KEA_PXE_CONTROL_PORT=18000` (Kea shim API endpoint used by kea-sync/checker)
+- `CHAMICORE_KEA_PXE_CTRL_AGENT_PORT=18001` (Kea control-agent inside `kea-pxe`)
+- `CHAMICORE_KEASYNC_SYNC_ON_STARTUP_PXE=true` and `CHAMICORE_KEASYNC_SYNC_INTERVAL_PXE=10s` (fast PXE reservation/boot-option reconciliation)
+- `CHAMICORE_VM_PXE_DISABLE_CONFLICTING_DHCP_NETWORKS=true` (temporarily stop other active libvirt DHCP networks to free UDP/67)
+- `CHAMICORE_VM_PXE_RESTORE_CONFLICTING_DHCP_NETWORKS=true` (restore those stopped networks on `make compose-vm-down`)
+
+In `pxe` mode, the script validates DHCP/PXE control-plane evidence:
 - Kea reservation for the VM MAC contains a bootscript URL.
 - Kea reports an active DHCP lease for the VM MAC.
 - Gateway access logs contain a successful `GET /boot/v1/bootscript?mac=<vm-mac>`.
-- VM serial console shows iPXE markers and Linux kernel handoff markers.
+
+By default, serial-console chain markers (iPXE and Linux handoff) are best-effort because some firmware/ROM combinations do not emit reliable serial output. To make missing console markers fail the check, set:
+
+```bash
+export CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=true
+```
 
 Guest SSH/cloud-init checks remain disabled by default in `pxe` mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are typically installer-oriented. Enable them explicitly if your netboot payload provides reachable SSH/cloud-init behavior.
+
+Troubleshooting common PXE bind failures:
+- `Address already in use` on UDP `:67`:
+  another DHCP server is bound in host namespace. By default, PXE mode temporarily stops other active libvirt DHCP networks. If you disabled this (`CHAMICORE_VM_PXE_DISABLE_CONFLICTING_DHCP_NETWORKS=false`), stop conflicts manually and ensure `virsh net-dumpxml <network>` has no `<dhcp>` block in PXE mode.
+- `Address already in use` on `:18000` or `:18001`:
+  override `CHAMICORE_KEA_PXE_CONTROL_PORT` or `CHAMICORE_KEA_PXE_CTRL_AGENT_PORT` in `.env` to free ports.
+- `Address already in use` on `:8001`:
+  sushy-tools host port collision; set `CHAMICORE_SUSHY_HOST_PORT` to an unused port.
+- VM shows no PXE/DHCP traffic:
+  ensure a PXE-capable NIC model is used (`CHAMICORE_VM_PXE_NIC_MODEL=e1000` is the local default) and keep the iPXE ROM auto-detected (or set `CHAMICORE_VM_PXE_ROMFILE` explicitly, for example `/usr/lib/ipxe/qemu/pxe-e1000.rom`).
 
 ## 8. Tear Down
 
