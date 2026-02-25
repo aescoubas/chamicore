@@ -3,7 +3,12 @@ module git.cscs.ch/openchami/chamicore-mcp
 go 1.24.0
 
 require (
+	git.cscs.ch/openchami/chamicore-bss v0.0.0
+	git.cscs.ch/openchami/chamicore-cloud-init v0.0.0
+	git.cscs.ch/openchami/chamicore-discovery v0.0.0
 	git.cscs.ch/openchami/chamicore-lib v0.0.0
+	git.cscs.ch/openchami/chamicore-power v0.0.0
+	git.cscs.ch/openchami/chamicore-smd v0.0.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
@@ -51,3 +56,13 @@ require (
 )
 
 replace git.cscs.ch/openchami/chamicore-lib => ../../shared/chamicore-lib
+
+replace git.cscs.ch/openchami/chamicore-bss => ../chamicore-bss
+
+replace git.cscs.ch/openchami/chamicore-cloud-init => ../chamicore-cloud-init
+
+replace git.cscs.ch/openchami/chamicore-discovery => ../chamicore-discovery
+
+replace git.cscs.ch/openchami/chamicore-power => ../chamicore-power
+
+replace git.cscs.ch/openchami/chamicore-smd => ../chamicore-smd

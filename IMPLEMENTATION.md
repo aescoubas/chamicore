@@ -3055,7 +3055,7 @@ Validation evidence (2026-02-25):
   1. `cd services/chamicore-mcp && go test -race ./...`
   2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.4: Tool registry + read-only core toolset [ ]
+### P9.4: Tool registry + read-only core toolset [x]
 
 **Depends on:** P9.3
 **Repo:** chamicore-mcp
@@ -3080,10 +3080,30 @@ Implement read-only tools backed by existing typed clients, not direct DB access
 - `discovery.targets.list|get`, `discovery.scans.list|get`, `discovery.drivers.list`
 
 **Done when:**
-- [ ] Read tools are registered with schema and capability metadata (`read`)
-- [ ] Tool handlers reuse existing service clients and endpoint/token config
-- [ ] Read-only mode can execute the full read subset
-- [ ] Unit tests cover success, validation, and downstream error mapping
+- [x] Read tools are registered with schema and capability metadata (`read`)
+- [x] Tool handlers reuse existing service clients and endpoint/token config
+- [x] Read-only mode can execute the full read subset
+- [x] Unit tests cover success, validation, and downstream error mapping
+
+Validation evidence (2026-02-25):
+- Added read-tool execution layer in `services/chamicore-mcp/internal/tools/*`:
+  - `registry.go` dispatches all V1 read tools and normalizes validation/downstream errors.
+  - `cluster_read.go`, `smd_read.go`, `bss_read.go`, `cloudinit_read.go`, `power_read.go`, `discovery_read.go` implement tool handlers.
+- Tool handlers use typed clients and endpoint/token configuration:
+  - SMD/BSS/Cloud-Init/Power typed SDKs.
+  - Discovery typed resource decoding via base client (no direct DB coupling).
+  - MCP config now includes per-service endpoint env vars:
+    `CHAMICORE_MCP_{AUTH,SMD,BSS,CLOUD_INIT,DISCOVERY,POWER}_URL`.
+- Runtime wiring now executes real tool calls (not scaffold placeholders):
+  - stdio and HTTP/SSE paths call the shared tool runner.
+  - Read-only mode gate remains enforced centrally before execution.
+- Added unit tests in `services/chamicore-mcp/internal/tools/registry_test.go` covering:
+  - success paths across the full read subset,
+  - argument validation failures,
+  - downstream API error mapping to tool error status/message.
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test -race ./...`
+  2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.5: Write toolset + destructive confirmation guard [ ]
 

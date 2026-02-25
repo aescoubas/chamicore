@@ -83,6 +83,7 @@ func RunStdio(
 	out io.Writer,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
 ) error {
@@ -118,7 +119,7 @@ func RunStdio(
 			continue
 		}
 
-		resp := handleRPCRequest(req, registry, authorizer, version, logger)
+		resp := handleRPCRequest(ctx, req, registry, authorizer, caller, version, logger)
 		if err := writeRPC(writer, resp); err != nil {
 			return err
 		}
@@ -148,9 +149,11 @@ func writeRPC(w *bufio.Writer, resp rpcResponse) error {
 }
 
 func handleRPCRequest(
+	ctx context.Context,
 	req rpcRequest,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
 ) rpcResponse {
@@ -221,23 +224,30 @@ func handleRPCRequest(
 			return response
 		}
 		logger.Info().Str("transport", "stdio").Str("tool", tool.Name).Msg("received tool call")
-		response.Result = callToolResult{
-			Content: []contentBlock{
-				{
-					Type: "text",
-					Text: fmt.Sprintf("tool %s accepted (scaffold mode)", tool.Name),
+		if caller == nil {
+			response.Result = callToolResult{
+				Content: []contentBlock{
+					{
+						Type: "text",
+						Text: fmt.Sprintf("tool %s accepted (no caller configured)", tool.Name),
+					},
 				},
-			},
-			IsError: false,
-			StructuredContent: map[string]any{
-				"tool":       tool.Name,
-				"status":     "accepted",
-				"mode":       resolvedMode(authorizer),
-				"capability": tool.Capability,
-				"detail":     "tool handlers are scaffolded in P9.2",
-				"arguments":  params.Arguments,
-			},
+				IsError: false,
+				StructuredContent: map[string]any{
+					"tool":   tool.Name,
+					"status": "accepted",
+					"mode":   resolvedMode(authorizer),
+				},
+			}
+			return response
 		}
+
+		payload, err := caller.Call(ctx, tool.Name, params.Arguments)
+		if err != nil {
+			response.Result = toolCallResultFromError(tool.Name, resolvedMode(authorizer), err)
+			return response
+		}
+		response.Result = toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload)
 		return response
 
 	default:

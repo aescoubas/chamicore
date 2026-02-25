@@ -20,6 +20,12 @@ const (
 	ModeReadWrite = "read-write"
 
 	defaultListenAddr = ":27774"
+	defaultAuthURL    = "http://localhost:3333"
+	defaultSMDURL     = "http://localhost:27779"
+	defaultBSSURL     = "http://localhost:27778"
+	defaultCloudURL   = "http://localhost:27777"
+	defaultDiscURL    = "http://localhost:27776"
+	defaultPowerURL   = "http://localhost:27775"
 )
 
 // Config holds service runtime configuration.
@@ -33,6 +39,13 @@ type Config struct {
 	EnableWrite         bool
 	AllowCLIConfigToken bool
 	CLIConfigPath       string
+
+	AuthURL      string
+	SMDURL       string
+	BSSURL       string
+	CloudInitURL string
+	DiscoveryURL string
+	PowerURL     string
 
 	MetricsEnabled bool
 	TracesEnabled  bool
@@ -52,6 +65,12 @@ func Load() (Config, error) {
 		DevMode:             envBool("CHAMICORE_MCP_DEV_MODE", false),
 		AllowCLIConfigToken: envBool("CHAMICORE_MCP_ALLOW_CLI_CONFIG_TOKEN", false),
 		CLIConfigPath:       strings.TrimSpace(envOrDefault("CHAMICORE_MCP_CLI_CONFIG_PATH", "~/.chamicore/config.yaml")),
+		AuthURL:             strings.TrimSpace(envOrDefault("CHAMICORE_MCP_AUTH_URL", defaultAuthURL)),
+		SMDURL:              strings.TrimSpace(envOrDefault("CHAMICORE_MCP_SMD_URL", defaultSMDURL)),
+		BSSURL:              strings.TrimSpace(envOrDefault("CHAMICORE_MCP_BSS_URL", defaultBSSURL)),
+		CloudInitURL:        strings.TrimSpace(envOrDefault("CHAMICORE_MCP_CLOUD_INIT_URL", defaultCloudURL)),
+		DiscoveryURL:        strings.TrimSpace(envOrDefault("CHAMICORE_MCP_DISCOVERY_URL", defaultDiscURL)),
+		PowerURL:            strings.TrimSpace(envOrDefault("CHAMICORE_MCP_POWER_URL", defaultPowerURL)),
 	}
 
 	switch cfg.Transport {
@@ -73,6 +92,24 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(cfg.CLIConfigPath) == "" {
 		cfg.CLIConfigPath = "~/.chamicore/config.yaml"
+	}
+	if strings.TrimSpace(cfg.AuthURL) == "" {
+		cfg.AuthURL = defaultAuthURL
+	}
+	if strings.TrimSpace(cfg.SMDURL) == "" {
+		cfg.SMDURL = defaultSMDURL
+	}
+	if strings.TrimSpace(cfg.BSSURL) == "" {
+		cfg.BSSURL = defaultBSSURL
+	}
+	if strings.TrimSpace(cfg.CloudInitURL) == "" {
+		cfg.CloudInitURL = defaultCloudURL
+	}
+	if strings.TrimSpace(cfg.DiscoveryURL) == "" {
+		cfg.DiscoveryURL = defaultDiscURL
+	}
+	if strings.TrimSpace(cfg.PowerURL) == "" {
+		cfg.PowerURL = defaultPowerURL
 	}
 
 	return cfg, nil

@@ -25,7 +25,7 @@ func TestRunStdio_InitializeListAndCall(t *testing.T) {
 	in := bytes.NewBufferString(input)
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -60,7 +60,7 @@ func TestRunStdio_UnknownMethod(t *testing.T) {
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"nope","params":{}}` + "\n")
 	out := &bytes.Buffer{}
 
-	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
+	err := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, err)
 
 	var resp rpcResponse
@@ -85,7 +85,7 @@ tools:
 	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"smd.groups.members.add","arguments":{"label":"g","members":["x0"]}}}` + "\n")
 	out := &bytes.Buffer{}
 
-	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), "test-version", zerolog.Nop())
+	runErr := RunStdio(context.Background(), in, out, registry, mustReadOnlyGuardForStdio(t), nil, "test-version", zerolog.Nop())
 	require.NoError(t, runErr)
 
 	var resp rpcResponse

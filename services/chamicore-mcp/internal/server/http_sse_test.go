@@ -24,7 +24,7 @@ func TestHTTPServer_RoutesAndSSE(t *testing.T) {
 		MetricsEnabled: true,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -80,7 +80,7 @@ func TestHTTPServer_CallToolUnknown(t *testing.T) {
 		Transport:  config.TransportHTTP,
 	}
 
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
@@ -114,7 +114,7 @@ tools:
 		ListenAddr: ":27774",
 		Transport:  config.TransportHTTP,
 	}
-	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), zerolog.Nop())
+	srv := NewHTTPServer(cfg, "v-test", "c-test", "b-test", []byte("tools: []"), registry, mustReadOnlyGuard(t), nil, zerolog.Nop())
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 

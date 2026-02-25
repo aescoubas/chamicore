@@ -19,6 +19,7 @@ import (
 	"git.cscs.ch/openchami/chamicore-mcp/internal/config"
 	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 	"git.cscs.ch/openchami/chamicore-mcp/internal/server"
+	"git.cscs.ch/openchami/chamicore-mcp/internal/tools"
 )
 
 var (
@@ -87,16 +88,28 @@ func main() {
 	}
 	logger.Info().Str("mode", modeGuard.Mode()).Bool("write_enabled", cfg.EnableWrite).Msg("execution policy initialized")
 
+	toolRunner, err := tools.NewRunner(tools.Config{
+		AuthURL:      cfg.AuthURL,
+		SMDURL:       cfg.SMDURL,
+		BSSURL:       cfg.BSSURL,
+		CloudInitURL: cfg.CloudInitURL,
+		DiscoveryURL: cfg.DiscoveryURL,
+		PowerURL:     cfg.PowerURL,
+	}, resolvedToken.Token)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize tool runner")
+	}
+
 	switch cfg.Transport {
 	case config.TransportStdio:
-		if runErr := server.RunStdio(ctx, os.Stdin, os.Stdout, registry, modeGuard, version, logger); runErr != nil {
+		if runErr := server.RunStdio(ctx, os.Stdin, os.Stdout, registry, modeGuard, toolRunner, version, logger); runErr != nil {
 			logger.Error().Err(runErr).Msg("stdio runtime stopped with error")
 			os.Exit(1)
 		}
 		logger.Info().Msg("stdio runtime stopped")
 
 	case config.TransportHTTP:
-		httpServer := server.NewHTTPServer(cfg, version, commit, buildDate, api.ToolsContract, registry, modeGuard, logger)
+		httpServer := server.NewHTTPServer(cfg, version, commit, buildDate, api.ToolsContract, registry, modeGuard, toolRunner, logger)
 		srv := &http.Server{
 			Addr:              cfg.ListenAddr,
 			Handler:           httpServer.Router(),

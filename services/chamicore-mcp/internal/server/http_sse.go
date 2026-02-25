@@ -18,14 +18,15 @@ func registerMCPHTTPRoutes(
 	r chi.Router,
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
+	caller ToolCaller,
 	version string,
 	logger zerolog.Logger,
 ) {
 	r.Route("/mcp/v1", func(r chi.Router) {
 		r.Post("/initialize", handleInitializeHTTP(version))
 		r.Get("/tools", handleListToolsHTTP(registry))
-		r.Post("/tools/call", handleCallToolHTTP(registry, authorizer, logger))
-		r.Post("/tools/call/sse", handleCallToolSSE(registry, authorizer, logger))
+		r.Post("/tools/call", handleCallToolHTTP(registry, authorizer, caller, logger))
+		r.Post("/tools/call/sse", handleCallToolSSE(registry, authorizer, caller, logger))
 	})
 }
 
@@ -55,18 +56,37 @@ func handleListToolsHTTP(registry *ToolRegistry) http.HandlerFunc {
 	}
 }
 
-func handleCallToolHTTP(registry *ToolRegistry, authorizer ToolAuthorizer, logger zerolog.Logger) http.HandlerFunc {
+func handleCallToolHTTP(
+	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
+	caller ToolCaller,
+	logger zerolog.Logger,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
 		if !ok {
 			return
 		}
 		logger.Info().Str("transport", "http").Str("tool", tool.Name).Msg("received tool call")
-		httputil.RespondJSON(w, http.StatusOK, buildScaffoldToolResult(params, tool, resolvedMode(authorizer)))
+		if caller == nil {
+			httputil.RespondJSON(w, http.StatusOK, toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), map[string]any{}))
+			return
+		}
+		payload, err := caller.Call(r.Context(), tool.Name, params.Arguments)
+		if err != nil {
+			httputil.RespondProblem(w, r, toolErrorStatus(err), toolErrorMessage(err))
+			return
+		}
+		httputil.RespondJSON(w, http.StatusOK, toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload))
 	}
 }
 
-func handleCallToolSSE(registry *ToolRegistry, authorizer ToolAuthorizer, logger zerolog.Logger) http.HandlerFunc {
+func handleCallToolSSE(
+	registry *ToolRegistry,
+	authorizer ToolAuthorizer,
+	caller ToolCaller,
+	logger zerolog.Logger,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer)
 		if !ok {
@@ -90,7 +110,28 @@ func handleCallToolSSE(registry *ToolRegistry, authorizer ToolAuthorizer, logger
 		}
 		_ = controller.Flush()
 
-		if err := writeSSEEvent(r.Context(), w, "result", buildScaffoldToolResult(params, tool, resolvedMode(authorizer))); err != nil {
+		if caller == nil {
+			if err := writeSSEEvent(r.Context(), w, "result", toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), map[string]any{})); err != nil {
+				return
+			}
+			_ = controller.Flush()
+			_ = writeSSEEvent(r.Context(), w, "done", map[string]any{"status": "done"})
+			_ = controller.Flush()
+			return
+		}
+
+		payload, err := caller.Call(r.Context(), tool.Name, params.Arguments)
+		if err != nil {
+			if writeErr := writeSSEEvent(r.Context(), w, "result", toolCallResultFromError(tool.Name, resolvedMode(authorizer), err)); writeErr != nil {
+				return
+			}
+			_ = controller.Flush()
+			_ = writeSSEEvent(r.Context(), w, "done", map[string]any{"status": "done"})
+			_ = controller.Flush()
+			return
+		}
+
+		if err := writeSSEEvent(r.Context(), w, "result", toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload)); err != nil {
 			return
 		}
 		_ = controller.Flush()
@@ -150,26 +191,6 @@ func writeSSEEvent(ctx context.Context, w http.ResponseWriter, event string, pay
 		return err
 	}
 	return nil
-}
-
-func buildScaffoldToolResult(params callToolParams, tool ToolSpec, mode string) callToolResult {
-	return callToolResult{
-		Content: []contentBlock{
-			{
-				Type: "text",
-				Text: fmt.Sprintf("tool %s accepted (scaffold mode)", tool.Name),
-			},
-		},
-		IsError: false,
-		StructuredContent: map[string]any{
-			"tool":       tool.Name,
-			"status":     "accepted",
-			"mode":       mode,
-			"capability": tool.Capability,
-			"detail":     "tool handlers are scaffolded in P9.2",
-			"arguments":  params.Arguments,
-		},
-	}
 }
 
 func decodeJSONStrict(r *http.Request, dst any) error {
