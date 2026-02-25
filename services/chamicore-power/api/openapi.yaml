@@ -1,11 +1,17 @@
 openapi: "3.0.3"
+
 info:
   title: chamicore-power API
   version: "power/v1"
-  description: Power transition APIs for nodes and groups.
+  description: |
+    Power transition APIs for nodes and groups.
+
+    This service follows PCS-compatible transition/status semantics with async jobs,
+    per-node outcomes, dry-run support, and bulk operations.
 
 servers:
   - url: http://localhost:27775
+    description: Local development
 
 tags:
   - name: health
@@ -18,101 +24,1056 @@ paths:
   /health:
     get:
       tags: [health]
+      summary: Liveness probe
       security: []
       responses:
         "200":
-          description: Service alive
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
   /readiness:
     get:
       tags: [health]
+      summary: Readiness probe
       security: []
       responses:
         "200":
-          description: Service ready
+          description: Service is ready.
         "503":
-          description: Service not ready
+          description: Service is not ready.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
   /version:
     get:
       tags: [health]
+      summary: Build version information
       security: []
       responses:
         "200":
-          description: Version info
+          description: Build metadata payload.
+
+  /api/docs:
+    get:
+      tags: [health]
+      summary: Swagger UI
+      security: []
+      responses:
+        "200":
+          description: Swagger UI HTML.
+
+  /api/openapi.yaml:
+    get:
+      tags: [health]
+      summary: OpenAPI specification
+      security: []
+      responses:
+        "200":
+          description: OpenAPI YAML.
+          content:
+            application/yaml:
+              schema:
+                type: string
 
   /power/v1/transitions:
     get:
       tags: [transitions]
+      summary: List transitions
+      description: Returns transitions ordered by newest first.
+      x-required-scopes: [read:power, admin]
+      parameters:
+        - name: limit
+          in: query
+          description: Page size (default 100, max 1000).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          description: Pagination offset.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
-          description: List transitions
+          description: Transition list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionListResource"
+              examples:
+                default:
+                  $ref: "#/components/examples/TransitionListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
     post:
       tags: [transitions]
+      summary: Create transition
+      description: |
+        Starts an asynchronous power transition.
+
+        Target expansion supports explicit node IDs and/or SMD groups.
+        Operation values are case-insensitive aliases normalized to canonical
+        Redfish reset types.
+      x-required-scopes: [write:power, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransitionRequest"
+            examples:
+              singleNode:
+                $ref: "#/components/examples/SingleNodeTransitionRequest"
+              bulk:
+                $ref: "#/components/examples/BulkTransitionRequest"
+              dryRun:
+                $ref: "#/components/examples/DryRunTransitionRequest"
       responses:
         "202":
-          description: Transition accepted
+          description: Transition accepted.
+          headers:
+            Location:
+              description: URI to poll transition details.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/TransitionAcceptedResponse"
+                dryRun:
+                  $ref: "#/components/examples/TransitionDryRunResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/transitions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Transition identifier.
+        schema:
+          type: string
     get:
       tags: [transitions]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Get transition
+      x-required-scopes: [read:power, admin]
       responses:
         "200":
-          description: Transition status
+          description: Transition status/details including per-node tasks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                withPerNodeResults:
+                  $ref: "#/components/examples/TransitionAbortResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
     delete:
       tags: [transitions]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Abort transition
+      description: Requests cancellation for an in-progress transition.
+      x-required-scopes: [write:power, admin]
       responses:
         "202":
-          description: Transition abort accepted
+          description: Abort accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                aborted:
+                  $ref: "#/components/examples/TransitionAbortResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/power-status:
     get:
       tags: [status]
+      summary: Get power status
+      description: |
+        Resolves current/latest power state for nodes.
+
+        At least one target is required via `nodes` or `groups`.
+        Query values may be repeated (`nodes=a&nodes=b`) and each value may be comma-separated.
+      x-required-scopes: [read:power, admin]
+      parameters:
+        - name: nodes
+          in: query
+          description: Node IDs. Repeat parameter and/or use comma-separated values.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: groups
+          in: query
+          description: SMD group names. Repeat parameter and/or use comma-separated values.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
       responses:
         "200":
-          description: Power status
+          description: Power status response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PowerStatusResource"
+              examples:
+                default:
+                  $ref: "#/components/examples/PowerStatusResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/actions/on:
     post:
       tags: [actions]
+      summary: Convenience action - on
+      description: Equivalent to transition operation `On`.
+      x-required-scopes: [write:power, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
       responses:
         "202":
-          description: Action accepted
+          description: Action accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/TransitionAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/actions/off:
     post:
       tags: [actions]
+      summary: Convenience action - off
+      description: Equivalent to transition operation `ForceOff`.
+      x-required-scopes: [write:power, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
       responses:
         "202":
-          description: Action accepted
+          description: Action accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/TransitionAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/actions/reboot:
     post:
       tags: [actions]
+      summary: Convenience action - reboot
+      description: Equivalent to transition operation `ForceRestart`.
+      x-required-scopes: [write:power, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
       responses:
         "202":
-          description: Action accepted
+          description: Action accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/TransitionAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/actions/reset:
     post:
       tags: [actions]
+      summary: Convenience action - reset (explicit operation)
+      description: |
+        Starts a transition with caller-selected operation.
+
+        Canonical operations are: `On`, `ForceOff`, `GracefulShutdown`,
+        `GracefulRestart`, `ForceRestart`, `Nmi`.
+      x-required-scopes: [write:power, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetActionRequest"
       responses:
         "202":
-          description: Action accepted
+          description: Action accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitionResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/TransitionAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /power/v1/admin/mappings/sync:
     post:
       tags: [admin]
+      summary: Trigger mapping sync
+      description: Triggers immediate SMD->power mapping reconciliation.
+      x-required-scopes: [admin:power, admin]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyObject"
+            example: {}
       responses:
         "202":
-          description: Sync accepted
+          description: Sync accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MappingSyncTriggerResource"
+              examples:
+                accepted:
+                  $ref: "#/components/examples/MappingSyncAcceptedResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+components:
+  responses:
+    BadRequest:
+      description: Invalid request payload or query parameter.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            invalidLimit:
+              $ref: "#/components/examples/ProblemInvalidLimit"
+
+    Forbidden:
+      description: Authenticated but missing required scope.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    NotFound:
+      description: Requested resource or target group not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            unknownGroup:
+              $ref: "#/components/examples/ProblemUnknownGroup"
+
+    InternalError:
+      description: Internal processing error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    BadGateway:
+      description: Upstream dependency failure (for example group-resolution backend).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    ServiceUnavailable:
+      description: Subsystem is unavailable or not ready.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    EmptyObject:
+      type: object
+      additionalProperties: false
+
+    Metadata:
+      type: object
+      properties:
+        id:
+          type: string
+        etag:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ListMetadata:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 0
+        offset:
+          type: integer
+          minimum: 0
+
+    CreateTransitionRequest:
+      type: object
+      required: [operation]
+      additionalProperties: false
+      properties:
+        operation:
+          allOf:
+            - $ref: "#/components/schemas/PowerOperation"
+          description: |
+            Requested transition operation.
+            Parser also accepts aliases case-insensitively (for example `off`, `reboot`).
+        requestID:
+          type: string
+          description: Optional caller correlation ID.
+        nodes:
+          type: array
+          items:
+            type: string
+        groups:
+          type: array
+          items:
+            type: string
+        dryRun:
+          type: boolean
+          description: Resolve and plan transition without issuing Redfish operations.
+
+    ActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        requestID:
+          type: string
+        nodes:
+          type: array
+          items:
+            type: string
+        groups:
+          type: array
+          items:
+            type: string
+        dryRun:
+          type: boolean
+
+    ResetActionRequest:
+      allOf:
+        - $ref: "#/components/schemas/ActionRequest"
+        - type: object
+          required: [operation]
+          properties:
+            operation:
+              $ref: "#/components/schemas/PowerOperation"
+
+    PowerOperation:
+      type: string
+      enum:
+        - On
+        - ForceOff
+        - GracefulShutdown
+        - GracefulRestart
+        - ForceRestart
+        - Nmi
+
+    TransitionState:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - partial
+        - canceled
+        - planned
+
+    TaskState:
+      type: string
+      enum:
+        - pending
+        - running
+        - succeeded
+        - failed
+        - canceled
+        - planned
+
+    TransitionTask:
+      type: object
+      required: [nodeID, operation, state, queuedAt, attemptCount, dryRun]
+      properties:
+        nodeID:
+          type: string
+        bmcID:
+          type: string
+        endpoint:
+          type: string
+        operation:
+          $ref: "#/components/schemas/PowerOperation"
+        state:
+          $ref: "#/components/schemas/TaskState"
+        finalPowerState:
+          type: string
+        errorDetail:
+          type: string
+        queuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        attemptCount:
+          type: integer
+          minimum: 0
+        dryRun:
+          type: boolean
+
+    Transition:
+      type: object
+      required:
+        [operation, state, queuedAt, targetCount, successCount, failureCount, dryRun]
+      properties:
+        requestID:
+          type: string
+        operation:
+          $ref: "#/components/schemas/PowerOperation"
+        state:
+          $ref: "#/components/schemas/TransitionState"
+        requestedBy:
+          type: string
+        queuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransitionTask"
+        targetCount:
+          type: integer
+          minimum: 0
+        successCount:
+          type: integer
+          minimum: 0
+        failureCount:
+          type: integer
+          minimum: 0
+        dryRun:
+          type: boolean
+
+    PowerNodeStatus:
+      type: object
+      required: [nodeID, state]
+      properties:
+        nodeID:
+          type: string
+        bmcID:
+          type: string
+        transitionID:
+          type: string
+        operation:
+          $ref: "#/components/schemas/PowerOperation"
+        state:
+          type: string
+          description: Node status lifecycle (`unknown`, `unresolved`, or task state values).
+        powerState:
+          type: string
+        errorDetail:
+          type: string
+        lastUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastCompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PowerStatus:
+      type: object
+      required: [nodeStatuses, total]
+      properties:
+        nodeStatuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/PowerNodeStatus"
+        total:
+          type: integer
+          minimum: 0
+
+    MappingSyncTrigger:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+
+    TransitionResource:
+      type: object
+      required: [kind, apiVersion, metadata, spec]
+      properties:
+        kind:
+          type: string
+          enum: [Transition]
+        apiVersion:
+          type: string
+          enum: [power/v1]
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        spec:
+          $ref: "#/components/schemas/Transition"
+
+    TransitionListResource:
+      type: object
+      required: [kind, apiVersion, metadata, items]
+      properties:
+        kind:
+          type: string
+          enum: [TransitionList]
+        apiVersion:
+          type: string
+          enum: [power/v1]
+        metadata:
+          $ref: "#/components/schemas/ListMetadata"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransitionResource"
+
+    PowerStatusResource:
+      type: object
+      required: [kind, apiVersion, metadata, spec]
+      properties:
+        kind:
+          type: string
+          enum: [PowerStatus]
+        apiVersion:
+          type: string
+          enum: [power/v1]
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        spec:
+          $ref: "#/components/schemas/PowerStatus"
+
+    MappingSyncTriggerResource:
+      type: object
+      required: [kind, apiVersion, metadata, spec]
+      properties:
+        kind:
+          type: string
+          enum: [MappingSyncTrigger]
+        apiVersion:
+          type: string
+          enum: [power/v1]
+        metadata:
+          $ref: "#/components/schemas/Metadata"
+        spec:
+          $ref: "#/components/schemas/MappingSyncTrigger"
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+    ValidationProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            errors:
+              type: array
+              items:
+                $ref: "#/components/schemas/FieldError"
+
+  examples:
+    SingleNodeTransitionRequest:
+      summary: Single-node transition request
+      value:
+        operation: On
+        requestID: req-001
+        nodes: [node-1]
+
+    BulkTransitionRequest:
+      summary: Bulk transition request with nodes and groups
+      value:
+        operation: ForceRestart
+        requestID: req-bulk-01
+        nodes: [node-1, node-2]
+        groups: [compute]
+
+    DryRunTransitionRequest:
+      summary: Dry-run transition request
+      value:
+        operation: GracefulShutdown
+        requestID: req-dryrun-01
+        groups: [compute]
+        dryRun: true
+
+    TransitionAcceptedResponse:
+      summary: Accepted transition response
+      value:
+        kind: Transition
+        apiVersion: power/v1
+        metadata:
+          id: transition-01
+          createdAt: "2026-02-25T12:00:00Z"
+          updatedAt: "2026-02-25T12:00:00Z"
+        spec:
+          requestID: req-001
+          operation: On
+          state: pending
+          requestedBy: alice
+          queuedAt: "2026-02-25T12:00:00Z"
+          targetCount: 1
+          successCount: 0
+          failureCount: 0
+          dryRun: false
+          tasks:
+            - nodeID: node-1
+              bmcID: bmc-1
+              endpoint: https://bmc-1/redfish/v1/Systems/System.Embedded.1
+              operation: On
+              state: pending
+              queuedAt: "2026-02-25T12:00:00Z"
+              attemptCount: 0
+              dryRun: false
+
+    TransitionDryRunResponse:
+      summary: Dry-run transition response
+      value:
+        kind: Transition
+        apiVersion: power/v1
+        metadata:
+          id: transition-dryrun-01
+          createdAt: "2026-02-25T12:05:00Z"
+          updatedAt: "2026-02-25T12:05:00Z"
+        spec:
+          requestID: req-dryrun-01
+          operation: GracefulShutdown
+          state: planned
+          requestedBy: alice
+          queuedAt: "2026-02-25T12:05:00Z"
+          completedAt: "2026-02-25T12:05:00Z"
+          targetCount: 2
+          successCount: 0
+          failureCount: 0
+          dryRun: true
+          tasks:
+            - nodeID: node-1
+              operation: GracefulShutdown
+              state: planned
+              queuedAt: "2026-02-25T12:05:00Z"
+              completedAt: "2026-02-25T12:05:00Z"
+              attemptCount: 0
+              dryRun: true
+
+    TransitionAbortResponse:
+      summary: Aborted transition with per-node outcomes
+      value:
+        kind: Transition
+        apiVersion: power/v1
+        metadata:
+          id: transition-02
+          createdAt: "2026-02-25T12:10:00Z"
+          updatedAt: "2026-02-25T12:10:20Z"
+        spec:
+          requestID: req-002
+          operation: ForceRestart
+          state: canceled
+          requestedBy: alice
+          queuedAt: "2026-02-25T12:10:00Z"
+          startedAt: "2026-02-25T12:10:01Z"
+          completedAt: "2026-02-25T12:10:20Z"
+          targetCount: 2
+          successCount: 1
+          failureCount: 1
+          dryRun: false
+          tasks:
+            - nodeID: node-1
+              bmcID: bmc-1
+              endpoint: https://bmc-1/redfish/v1/Systems/System.Embedded.1
+              operation: ForceRestart
+              state: succeeded
+              finalPowerState: On
+              queuedAt: "2026-02-25T12:10:00Z"
+              startedAt: "2026-02-25T12:10:01Z"
+              completedAt: "2026-02-25T12:10:05Z"
+              attemptCount: 1
+              dryRun: false
+            - nodeID: node-2
+              bmcID: bmc-2
+              endpoint: https://bmc-2/redfish/v1/Systems/System.Embedded.1
+              operation: ForceRestart
+              state: canceled
+              errorDetail: transition canceled by user
+              queuedAt: "2026-02-25T12:10:00Z"
+              startedAt: "2026-02-25T12:10:03Z"
+              completedAt: "2026-02-25T12:10:20Z"
+              attemptCount: 1
+              dryRun: false
+
+    TransitionListResponse:
+      summary: Transition list page
+      value:
+        kind: TransitionList
+        apiVersion: power/v1
+        metadata:
+          total: 2
+          limit: 100
+          offset: 0
+        items:
+          - kind: Transition
+            apiVersion: power/v1
+            metadata:
+              id: transition-02
+              createdAt: "2026-02-25T12:10:00Z"
+              updatedAt: "2026-02-25T12:10:20Z"
+            spec:
+              operation: ForceRestart
+              state: canceled
+              queuedAt: "2026-02-25T12:10:00Z"
+              targetCount: 2
+              successCount: 1
+              failureCount: 1
+              dryRun: false
+          - kind: Transition
+            apiVersion: power/v1
+            metadata:
+              id: transition-01
+              createdAt: "2026-02-25T12:00:00Z"
+              updatedAt: "2026-02-25T12:00:05Z"
+            spec:
+              operation: On
+              state: completed
+              queuedAt: "2026-02-25T12:00:00Z"
+              completedAt: "2026-02-25T12:00:05Z"
+              targetCount: 1
+              successCount: 1
+              failureCount: 0
+              dryRun: false
+
+    PowerStatusResponse:
+      summary: Power status with resolved and unresolved nodes
+      value:
+        kind: PowerStatus
+        apiVersion: power/v1
+        metadata:
+          id: power-status
+        spec:
+          total: 2
+          nodeStatuses:
+            - nodeID: node-1
+              bmcID: bmc-1
+              transitionID: transition-01
+              operation: On
+              state: succeeded
+              powerState: On
+              lastUpdatedAt: "2026-02-25T12:00:05Z"
+              lastCompletedAt: "2026-02-25T12:00:05Z"
+            - nodeID: node-2
+              state: unresolved
+              errorDetail: node mapping missing
+              lastUpdatedAt: "2026-02-25T12:01:00Z"
+
+    MappingSyncAcceptedResponse:
+      summary: Mapping sync trigger accepted
+      value:
+        kind: MappingSyncTrigger
+        apiVersion: power/v1
+        metadata:
+          id: power-mapping-sync
+        spec:
+          status: accepted
+
+    ProblemInvalidLimit:
+      summary: Invalid pagination argument
+      value:
+        type: about:blank
+        title: Bad Request
+        status: 400
+        detail: invalid limit value "abc"
+        instance: /power/v1/transitions?limit=abc
+
+    ProblemUnknownGroup:
+      summary: Group target not found
+      value:
+        type: about:blank
+        title: Not Found
+        status: 404
+        detail: 'group "compute-missing" not found'
+        instance: /power/v1/transitions
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

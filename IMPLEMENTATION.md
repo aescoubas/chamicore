@@ -2562,7 +2562,7 @@ Implement `chamicore-power` with OpenCHAMI PCS-style transitions/status APIs on
 top of Redfish, using a shared `chamicore-lib/redfish` package to avoid duplicating
 discovery driver logic.
 
-### P8.1: ADR + PCS-compatible API contract [ ]
+### P8.1: ADR + PCS-compatible API contract [x]
 
 **Depends on:** none
 **Repo:** chamicore (umbrella), chamicore-power
@@ -2581,9 +2581,13 @@ Freeze V1 contract and semantics before implementation:
 
 **Done when:**
 - [x] ADR-017 records all approved decisions
-- [ ] `api/openapi.yaml` defines PCS-compatible endpoints and schemas
-- [ ] Operation enums and request/response shapes are consistent with ADR-017
-- [ ] API examples cover single-node, bulk, dry-run, and abort flows
+- [x] `api/openapi.yaml` defines PCS-compatible endpoints and schemas
+- [x] Operation enums and request/response shapes are consistent with ADR-017
+- [x] API examples cover single-node, bulk, dry-run, and abort flows
+
+Validation evidence (2026-02-25):
+- `services/chamicore-power/api/openapi.yaml` now defines full PCS-compatible path contracts, envelope schemas, RFC9457 problem schemas, and operation/task enums aligned with ADR-017.
+- Added `services/chamicore-power/api/openapi_contract_test.go` to enforce parseability, required endpoints, enum sets, scope annotations, and required examples (single-node, bulk, dry-run, abort).
 
 ### P8.2: Shared Redfish package in chamicore-lib [x]
 
