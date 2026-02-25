@@ -2907,3 +2907,288 @@ Validation evidence:
 Remaining open for strict closure:
 1. P7.5 coverage criterion (`100% test coverage maintained`) remains open.
 2. Repo-wide strict `100%` coverage closure remains open across the modules listed above.
+
+---
+
+## Phase 9: MCP Control Server (Agent Control Plane)
+
+Implement a new `chamicore-mcp` service in Go so coding agents can control and observe
+the cluster through MCP tools. V1 targets a narrow operation subset with strict mode
+gating:
+- `read-only` mode: only read tools.
+- `read-write` mode: read + write tools, with explicit destructive confirmations.
+
+Locked decisions (2026-02-25):
+1. Transport: support both `stdio` and `HTTP/SSE` in V1.
+2. Deployment: support local process usage and deployed service in Compose/Helm.
+3. V1 write scope: approved (`smd` groups, `bss` bootparams, `cloud-init` payloads, `power` transitions).
+4. Discovery tools: include discovery in V1 subset.
+5. Destructive operations: require per-tool explicit confirmation for delete/off/reset actions.
+6. Scope model: broad admin token support is allowed in V1.
+7. Audit sink: structured stdout logs only in V1.
+8. Roadmap integration: track as Phase 9.
+
+### P9.1: ADR + MCP API/tool contract [x]
+
+**Depends on:** none
+**Repo:** chamicore (umbrella), chamicore-mcp
+
+**Files:**
+- `ARCHITECTURE/ADR-018-mcp-control-server.md`
+- `services/chamicore-mcp/api/tools.yaml` (tool contract source of truth)
+
+**Description:**
+Define MCP server contract, trust boundaries, mode semantics, token handling, and tool
+schema conventions:
+- transport model (`stdio`, `HTTP/SSE`)
+- tool naming and input/output schema rules
+- read/write capability tagging
+- destructive confirmation semantics
+- error mapping (RFC 9457 passthrough + MCP-safe envelope)
+
+**Done when:**
+- [x] ADR-018 records architecture, risk model, and accepted tradeoffs
+- [x] Tool contract includes all V1 tool names and schemas
+- [x] Read-only and read-write semantics are unambiguous and testable
+
+Validation evidence (2026-02-25):
+- Added `ARCHITECTURE/ADR-018-mcp-control-server.md` with accepted decisions for dual transport (`stdio` + HTTP/SSE), mode gating, destructive confirmation, token/auth model, and deployment scope.
+- Added V1 tool contract in `services/chamicore-mcp/api/tools.yaml`, including:
+  - read/write capability tags,
+  - broad-admin required scope metadata,
+  - input/output schemas per tool,
+  - explicit destructive confirmation requirements,
+  - conditional confirmation rules for destructive power operations.
+- `ARCHITECTURE/README.md` index now includes ADR-018 for discoverability.
+
+### P9.2: Service scaffold + configuration + dual transport runtime [ ]
+
+**Depends on:** P9.1
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/cmd/chamicore-mcp/main.go`
+- `services/chamicore-mcp/internal/config/config.go`
+- `services/chamicore-mcp/internal/server/stdio.go`
+- `services/chamicore-mcp/internal/server/http_sse.go`
+- `services/chamicore-mcp/internal/server/router.go`
+- `services/chamicore-mcp/internal/server/health.go`
+
+**Description:**
+Create service template-based scaffold with:
+- `stdio` MCP session handling
+- HTTP API exposing MCP-compatible tool calls over `SSE`
+- standard health/readiness/version/metrics endpoints
+- structured zerolog request/session logging
+
+**Done when:**
+- [ ] Service starts in stdio mode and handles MCP initialize/list-tools/call-tool flows
+- [ ] Service starts in HTTP/SSE mode and streams tool results
+- [ ] Health/readiness/version endpoints conform to existing conventions
+- [ ] Service passes `go test -race ./...` and `golangci-lint run ./...`
+
+### P9.3: Auth/token source strategy + mode gate policy [ ]
+
+**Depends on:** P9.2
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/internal/auth/token_source.go`
+- `services/chamicore-mcp/internal/policy/mode.go`
+- `services/chamicore-mcp/internal/policy/mode_test.go`
+
+**Description:**
+Implement token resolution and mode gating with safe defaults.
+
+Token source precedence (V1):
+1. `CHAMICORE_MCP_TOKEN`
+2. `CHAMICORE_TOKEN`
+3. CLI config token (`~/.chamicore/config.yaml`) only when `CHAMICORE_MCP_ALLOW_CLI_CONFIG_TOKEN=true`
+
+Mode policy (V1):
+- `CHAMICORE_MCP_MODE=read-only` (default)
+- `CHAMICORE_MCP_MODE=read-write` requires `CHAMICORE_MCP_ENABLE_WRITE=true`
+- startup fails if write mode is requested without explicit write enable
+
+**Done when:**
+- [ ] Token resolution order is deterministic and covered by tests
+- [ ] Default startup mode is read-only
+- [ ] Write mode requires explicit dual-control config
+- [ ] Policy is enforced centrally for every tool call
+
+### P9.4: Tool registry + read-only core toolset [ ]
+
+**Depends on:** P9.3
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/internal/tools/registry.go`
+- `services/chamicore-mcp/internal/tools/cluster_read.go`
+- `services/chamicore-mcp/internal/tools/smd_read.go`
+- `services/chamicore-mcp/internal/tools/bss_read.go`
+- `services/chamicore-mcp/internal/tools/cloudinit_read.go`
+- `services/chamicore-mcp/internal/tools/power_read.go`
+- `services/chamicore-mcp/internal/tools/discovery_read.go`
+
+**Description:**
+Implement read-only tools backed by existing typed clients, not direct DB access:
+- `cluster.health_summary`
+- `smd.components.list|get`
+- `smd.groups.list|get`
+- `bss.bootparams.list|get`
+- `cloudinit.payloads.list|get`
+- `power.status.get`, `power.transitions.list|get`
+- `discovery.targets.list|get`, `discovery.scans.list|get`, `discovery.drivers.list`
+
+**Done when:**
+- [ ] Read tools are registered with schema and capability metadata (`read`)
+- [ ] Tool handlers reuse existing service clients and endpoint/token config
+- [ ] Read-only mode can execute the full read subset
+- [ ] Unit tests cover success, validation, and downstream error mapping
+
+### P9.5: Write toolset + destructive confirmation guard [ ]
+
+**Depends on:** P9.4
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/internal/tools/smd_write.go`
+- `services/chamicore-mcp/internal/tools/bss_write.go`
+- `services/chamicore-mcp/internal/tools/cloudinit_write.go`
+- `services/chamicore-mcp/internal/tools/power_write.go`
+- `services/chamicore-mcp/internal/tools/discovery_write.go`
+- `services/chamicore-mcp/internal/policy/confirm.go`
+
+**Description:**
+Implement approved write tools:
+- `smd.groups.members.add|remove`
+- `bss.bootparams.upsert|delete`
+- `cloudinit.payloads.upsert|delete`
+- `power.transitions.create|abort|wait`
+- `discovery.targets.create|update|delete`, `discovery.target.scan`, `discovery.scan.trigger|delete`
+
+Destructive confirmation requirement:
+- mandatory `confirm=true` input for:
+  - all `*.delete` tools
+  - `power.transitions.create` when operation is `ForceOff`, `GracefulShutdown`, `ForceRestart`, `GracefulRestart`, or `Nmi`
+  - `power.transitions.abort`
+
+**Done when:**
+- [ ] Write tools are blocked in read-only mode
+- [ ] Write tools run in read-write mode only when dual-control flags are enabled
+- [ ] Destructive tools fail with clear validation error when confirmation is absent
+- [ ] Tests cover mode denial and confirmation enforcement paths
+
+### P9.6: HTTP/SSE session auth + per-call scope evaluation [ ]
+
+**Depends on:** P9.5
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/internal/server/http_auth.go`
+- `services/chamicore-mcp/internal/policy/scopes.go`
+
+**Description:**
+Apply token-based auth and scope checks in both transports:
+- broad admin token accepted in V1
+- per-tool required scope metadata still defined for forward migration to strict least-privilege
+- consistent denial responses with actionable details
+
+**Done when:**
+- [ ] HTTP/SSE mode authenticates incoming tool calls
+- [ ] stdio mode resolves token through configured source precedence
+- [ ] Tool-level scope policy is evaluated before handler execution
+- [ ] Tests cover admin token allow-path and missing-token/missing-scope failures
+
+### P9.7: Audit logging and observability [ ]
+
+**Depends on:** P9.6
+**Repo:** chamicore-mcp
+
+**Files:**
+- `services/chamicore-mcp/internal/audit/logger.go`
+- `services/chamicore-mcp/internal/audit/logger_test.go`
+
+**Description:**
+Emit structured audit logs to stdout for every tool call:
+- request id/session id
+- tool name
+- mode (`read-only`/`read-write`)
+- caller identity (subject if available)
+- target summary (node/group/resource ids)
+- result (success/error) and duration
+
+**Done when:**
+- [ ] Every tool call emits exactly one completion audit log line
+- [ ] Sensitive fields (tokens, secrets) are redacted
+- [ ] Error paths include enough detail for incident debugging
+
+### P9.8: Deployment integration (Compose + Helm) [ ]
+
+**Depends on:** P9.7
+**Repo:** chamicore-deploy, chamicore
+
+**Files:**
+- `shared/chamicore-deploy/docker-compose.yml`
+- `shared/chamicore-deploy/charts/chamicore/values.yaml`
+- `shared/chamicore-deploy/charts/chamicore/templates/chamicore-mcp-*.yaml`
+- `.env.example` and deploy docs updates
+
+**Description:**
+Integrate `chamicore-mcp` into dev/prod deployment:
+- Compose service wiring with endpoint/token env configuration
+- Helm deployment/service/config values
+- defaults to read-only mode
+- explicit opt-in for read-write mode
+
+**Done when:**
+- [ ] `make compose-up` includes `chamicore-mcp`
+- [ ] Helm lint/template includes `chamicore-mcp` manifests
+- [ ] Defaults are safe (`read-only`)
+- [ ] Documentation includes exact env settings for both modes
+
+### P9.9: CLI-first operator docs and agent setup [ ]
+
+**Depends on:** P9.8
+**Repo:** chamicore
+
+**Files:**
+- `docs/mcp.md`
+- `README.md` (section link/update)
+- `docs/workflows.md` (MCP workflow snippets)
+
+**Description:**
+Document:
+- local stdio usage for coding agents
+- remote HTTP/SSE usage
+- safe transition from read-only to read-write
+- destructive confirmation examples
+
+**Done when:**
+- [ ] Docs provide copy/paste setup for local and deployed modes
+- [ ] Examples cover at least one read workflow and one write workflow
+- [ ] Troubleshooting section includes auth/mode/confirmation failures
+
+### P9.10: Quality gates + smoke validation [ ]
+
+**Depends on:** P9.9
+**Repo:** chamicore-mcp, tests
+
+**Files:**
+- `services/chamicore-mcp/internal/**/*_test.go`
+- `tests/smoke/mcp_test.go` (new)
+- `quality/thresholds.txt` (add module entry)
+
+**Description:**
+Close Phase 9 with quality evidence and smoke checks:
+- lint, race, coverage, and transport/tool-mode tests
+- compose smoke for read-only and read-write gates
+
+**Done when:**
+- [ ] `go test -race ./...` passes in `services/chamicore-mcp`
+- [ ] `golangci-lint run ./...` passes in `services/chamicore-mcp`
+- [ ] Coverage threshold policy includes `services/chamicore-mcp`
+- [ ] Smoke validates:
+  - read-only mode denies write tools
+  - read-write mode allows write tools
+  - destructive tools require explicit confirmation

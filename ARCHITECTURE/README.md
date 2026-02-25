@@ -41,3 +41,4 @@ All ADRs follow the template in [TEMPLATE.md](TEMPLATE.md). Each ADR has:
 | [ADR-015](ADR-015-event-driven-architecture.md) | Event-Driven Architecture (NATS JetStream) | Proposed | 2026-02-18 |
 | [ADR-016](ADR-016-quality-engineering-policy.md) | Quality Engineering Policy and Database Drift Control | Accepted | 2026-02-24 |
 | [ADR-017](ADR-017-power-control-service.md) | Power Control Service (PCS-Compatible) and Shared Redfish Library | Accepted | 2026-02-24 |
+| [ADR-018](ADR-018-mcp-control-server.md) | MCP Control Server for Agent-Driven Cluster Operations | Accepted | 2026-02-25 |
