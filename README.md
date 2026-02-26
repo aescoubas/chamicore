@@ -37,18 +37,18 @@ Chamicore is a clean-room rewrite of the [OpenCHAMI](https://github.com/OpenCHAM
 
 | Service | Port | Description |
 |---------|------|-------------|
-| [chamicore-smd](services/chamicore-smd/) | 27779 | State Management Daemon - central inventory and hardware state |
-| [chamicore-bss](services/chamicore-bss/) | 27778 | Boot Script Service - iPXE boot scripts, kernel/initrd management |
-| [chamicore-cloud-init](services/chamicore-cloud-init/) | 27777 | Cloud-Init - per-node cloud-init payloads |
-| [chamicore-power](services/chamicore-power/) | 27775 | Power control service (PCS-compatible transitions/status over Redfish) |
-| [chamicore-mcp](services/chamicore-mcp/) | 27774 | MCP control server for coding agents (stdio + HTTP/SSE, read-only default) |
-| [chamicore-kea-sync](services/chamicore-kea-sync/) | N/A | Syncs SMD inventory to Kea DHCP server for PXE/iPXE boot |
-| [chamicore-discovery](services/chamicore-discovery/) | 27776 | Hardware discovery - service + sysadmin CLI (Redfish, IPMI, SNMP, CSV import) |
-| [chamicore-auth](services/chamicore-auth/) | 3333 | AuthN/AuthZ (OIDC, Casbin) + device credential store |
-| [chamicore-ui](services/chamicore-ui/) | 8080 | Web management UI (Go backend + Vue.js frontend) |
-| [chamicore-cli](services/chamicore-cli/) | N/A | CLI client: per-service commands + composite multi-service workflows |
-| [chamicore-deploy](shared/chamicore-deploy/) | N/A | Helm charts (production) and Docker Compose (development) |
-| [chamicore-lib](shared/chamicore-lib/) | N/A | Shared Go library (auth middleware, DB, HTTP utils, identity) |
+| [chamicore-smd](https://github.com/aescoubas/chamicore-smd) | 27779 | State Management Daemon - central inventory and hardware state |
+| [chamicore-bss](https://github.com/aescoubas/chamicore-bss) | 27778 | Boot Script Service - iPXE boot scripts, kernel/initrd management |
+| [chamicore-cloud-init](https://github.com/aescoubas/chamicore-cloud-init) | 27777 | Cloud-Init - per-node cloud-init payloads |
+| [chamicore-power](https://github.com/aescoubas/chamicore-power) | 27775 | Power control service (PCS-compatible transitions/status over Redfish) |
+| [chamicore-mcp](https://github.com/aescoubas/chamicore-mcp) | 27774 | MCP control server for coding agents (stdio + HTTP/SSE, read-only default) |
+| [chamicore-kea-sync](https://github.com/aescoubas/chamicore-kea-sync) | N/A | Syncs SMD inventory to Kea DHCP server for PXE/iPXE boot |
+| [chamicore-discovery](https://github.com/aescoubas/chamicore-discovery) | 27776 | Hardware discovery - service + sysadmin CLI (Redfish, IPMI, SNMP, CSV import) |
+| [chamicore-auth](https://github.com/aescoubas/chamicore-auth) | 3333 | AuthN/AuthZ (OIDC, Casbin) + device credential store |
+| [chamicore-ui](https://github.com/aescoubas/chamicore-ui) | 8080 | Web management UI (Go backend + Vue.js frontend) |
+| [chamicore-cli](https://github.com/aescoubas/chamicore-cli) | N/A | CLI client: per-service commands + composite multi-service workflows |
+| [chamicore-deploy](https://github.com/aescoubas/chamicore-deploy) | N/A | Helm charts (production) and Docker Compose (development) |
+| [chamicore-lib](https://github.com/aescoubas/chamicore-lib) | N/A | Shared Go library (auth middleware, DB, HTTP utils, identity) |
 
 ## Quick Start
 
