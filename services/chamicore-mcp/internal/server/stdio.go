@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
+	"git.cscs.ch/openchami/chamicore-mcp/internal/audit"
 	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
@@ -166,6 +169,8 @@ func handleRPCRequest(
 		ID:      req.ID,
 	}
 
+	auditLogger := audit.NewLogger(logger)
+
 	if strings.TrimSpace(req.JSONRPC) != "2.0" {
 		response.Error = &rpcError{
 			Code:    rpcCodeInvalidRequest,
@@ -196,61 +201,101 @@ func handleRPCRequest(
 		return response
 
 	case "tools/call":
+		started := time.Now()
+		mode := resolvedMode(authorizer)
+		toolName := ""
+		arguments := map[string]any{}
+		callerSubject := ""
+		result := "error"
+		errorDetail := ""
+		responseCode := 0
+
+		defer func() {
+			auditLogger.Complete(audit.ToolCallCompletion{
+				RequestID:    rpcIDAsString(req.ID),
+				SessionID:    "stdio",
+				Transport:    "stdio",
+				ToolName:     toolName,
+				Mode:         mode,
+				CallerSub:    callerSubject,
+				Arguments:    arguments,
+				Result:       result,
+				ErrorDetail:  errorDetail,
+				Duration:     time.Since(started),
+				ResponseCode: responseCode,
+			})
+		}()
+
 		var params callToolParams
 		if len(req.Params) == 0 {
+			errorDetail = "missing params"
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: "missing params",
+				Message: errorDetail,
 			}
 			return response
 		}
 		if err := json.Unmarshal(req.Params, &params); err != nil {
+			errorDetail = fmt.Sprintf("invalid tools/call params: %v", err)
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: fmt.Sprintf("invalid tools/call params: %v", err),
+				Message: errorDetail,
 			}
 			return response
 		}
 		name := strings.TrimSpace(params.Name)
+		toolName = name
+		if params.Arguments != nil {
+			arguments = params.Arguments
+		}
 		tool, ok := registry.Lookup(name)
 		if !ok {
+			errorDetail = fmt.Sprintf("unknown tool: %s", name)
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: fmt.Sprintf("unknown tool: %s", name),
+				Message: errorDetail,
 			}
 			return response
 		}
+		toolName = tool.Name
 		if err := authorizeToolCall(authorizer, tool); err != nil {
+			errorDetail = err.Error()
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: err.Error(),
+				Message: errorDetail,
 			}
 			return response
 		}
 		principal, err := authenticateStdioToolCall(sessionAuth)
 		if err != nil {
+			errorDetail = err.Error()
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: err.Error(),
+				Message: errorDetail,
 			}
 			return response
 		}
+		callerSubject = principal.Subject
 		if err := policy.RequireConfirmation(tool.Name, tool.ConfirmationRequired, params.Arguments); err != nil {
+			errorDetail = err.Error()
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: err.Error(),
+				Message: errorDetail,
 			}
 			return response
 		}
 		if err := requireToolScopes(tool, principal); err != nil {
+			errorDetail = err.Error()
 			response.Error = &rpcError{
 				Code:    rpcCodeInvalidParams,
-				Message: err.Error(),
+				Message: errorDetail,
 			}
 			return response
 		}
 		logger.Info().Str("transport", "stdio").Str("tool", tool.Name).Msg("received tool call")
 		if caller == nil {
+			result = "success"
+			responseCode = 200
 			response.Result = callToolResult{
 				Content: []contentBlock{
 					{
@@ -270,9 +315,13 @@ func handleRPCRequest(
 
 		payload, err := caller.Call(ctx, tool.Name, params.Arguments)
 		if err != nil {
+			errorDetail = toolErrorMessage(err)
+			responseCode = toolErrorStatus(err)
 			response.Result = toolCallResultFromError(tool.Name, resolvedMode(authorizer), err)
 			return response
 		}
+		result = "success"
+		responseCode = 200
 		response.Result = toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload)
 		return response
 
@@ -282,6 +331,31 @@ func handleRPCRequest(
 			Message: fmt.Sprintf("unknown method: %s", strings.TrimSpace(req.Method)),
 		}
 		return response
+	}
+}
+
+func rpcIDAsString(id any) string {
+	switch typed := id.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'f', -1, 32)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case int32:
+		return strconv.FormatInt(int64(typed), 10)
+	case uint64:
+		return strconv.FormatUint(typed, 10)
+	case uint32:
+		return strconv.FormatUint(uint64(typed), 10)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", id))
 	}
 }
 

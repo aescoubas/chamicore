@@ -297,6 +297,88 @@ tools:
 	require.Contains(t, string(body), "missing required scope(s): admin")
 }
 
+func TestHTTPServer_AuditCompletionLoggedOnceOnHTTPError(t *testing.T) {
+	registry := mustTestRegistry(t)
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+	logs := &bytes.Buffer{}
+
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.New(logs),
+	)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"nope","arguments":{"token":"super-secret"}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer http-session-token")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	events := httpAuditEventsFromLogs(t, logs.String())
+	require.Len(t, events, 1)
+	require.Equal(t, "http", events[0]["transport"])
+	require.Equal(t, "nope", events[0]["tool"])
+	require.Equal(t, "error", events[0]["result"])
+	require.Contains(t, events[0]["error_detail"], "unknown tool")
+}
+
+func TestHTTPServer_AuditCompletionLoggedOnceOnSSESuccess(t *testing.T) {
+	registry := mustTestRegistry(t)
+	cfg := config.Config{
+		ListenAddr: ":27774",
+		Transport:  config.TransportHTTP,
+	}
+	logs := &bytes.Buffer{}
+
+	srv := NewHTTPServer(
+		cfg,
+		"v-test",
+		"c-test",
+		"b-test",
+		[]byte("tools: []"),
+		registry,
+		mustReadOnlyGuard(t),
+		mustSessionAuthForHTTP(t),
+		nil,
+		zerolog.New(logs),
+	)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	reqBody := bytes.NewBufferString(`{"name":"cluster.health_summary","arguments":{"nodes":["x0"]}}`)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp/v1/tools/call/sse", reqBody)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer http-session-token")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	events := httpAuditEventsFromLogs(t, logs.String())
+	require.Len(t, events, 1)
+	require.Equal(t, "http-sse", events[0]["transport"])
+	require.Equal(t, "cluster.health_summary", events[0]["tool"])
+	require.Equal(t, "success", events[0]["result"])
+}
+
 func mustReadOnlyGuard(t *testing.T) *policy.Guard {
 	t.Helper()
 	guard, err := policy.NewGuard(policy.ModeReadOnly, false)
@@ -314,4 +396,29 @@ func mustReadWriteGuard(t *testing.T) *policy.Guard {
 func mustSessionAuthForHTTP(t *testing.T) SessionAuthenticator {
 	t.Helper()
 	return NewTokenSessionAuthenticator("http-session-token")
+}
+
+func httpAuditEventsFromLogs(t *testing.T, payload string) []map[string]string {
+	t.Helper()
+
+	lines := strings.Split(strings.TrimSpace(payload), "\n")
+	events := make([]map[string]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &decoded))
+		if decoded["event"] != "mcp.tool_call.completed" {
+			continue
+		}
+		entry := map[string]string{}
+		for key, value := range decoded {
+			if asString, ok := value.(string); ok {
+				entry[key] = asString
+			}
+		}
+		events = append(events, entry)
+	}
+	return events
 }

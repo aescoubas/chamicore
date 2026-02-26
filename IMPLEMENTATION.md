@@ -3209,7 +3209,7 @@ Validation evidence (2026-02-25):
   2. `cd services/chamicore-mcp && go test -race ./...`
   3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.7: Audit logging and observability [ ]
+### P9.7: Audit logging and observability [x]
 
 **Depends on:** P9.6
 **Repo:** chamicore-mcp
@@ -3228,9 +3228,30 @@ Emit structured audit logs to stdout for every tool call:
 - result (success/error) and duration
 
 **Done when:**
-- [ ] Every tool call emits exactly one completion audit log line
-- [ ] Sensitive fields (tokens, secrets) are redacted
-- [ ] Error paths include enough detail for incident debugging
+- [x] Every tool call emits exactly one completion audit log line
+- [x] Sensitive fields (tokens, secrets) are redacted
+- [x] Error paths include enough detail for incident debugging
+
+Validation evidence (2026-02-25):
+- Added centralized audit package:
+  - `services/chamicore-mcp/internal/audit/logger.go`
+  - `services/chamicore-mcp/internal/audit/logger_test.go`
+- Audit completion log now emits one structured event per tool call with:
+  - `request_id`, `session_id`, `transport`, `tool`, `mode`, `caller_subject`,
+    `target` summary, `result`, `duration_ms`, and optional `response_code`/`error_detail`.
+- Sensitive redaction implemented for free-text error details:
+  - Bearer token fragments and `token|secret|password|authorization` key-value pairs are masked.
+  - Target summaries only include node/group/resource identifiers (no raw secret payload fields).
+- Integrated audit completion emission in both transports:
+  - stdio JSON-RPC path: `services/chamicore-mcp/internal/server/stdio.go`
+  - HTTP and HTTP/SSE paths: `services/chamicore-mcp/internal/server/http_sse.go`
+- Added transport-level tests asserting one completion audit event per tool call:
+  - `services/chamicore-mcp/internal/server/stdio_test.go`
+  - `services/chamicore-mcp/internal/server/http_sse_test.go`
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test ./...`
+  2. `cd services/chamicore-mcp && go test -race ./...`
+  3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
 ### P9.8: Deployment integration (Compose + Helm) [ ]
 

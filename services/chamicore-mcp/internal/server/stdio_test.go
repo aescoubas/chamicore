@@ -191,6 +191,61 @@ tools:
 	require.Contains(t, resp.Error.Message, "missing required scope(s): admin")
 }
 
+func TestRunStdio_AuditCompletionLoggedOnceOnSuccess(t *testing.T) {
+	registry := mustTestRegistry(t)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"cluster.health_summary","arguments":{"nodes":["x0"]}}}` + "\n")
+	out := &bytes.Buffer{}
+	logs := &bytes.Buffer{}
+
+	runErr := RunStdio(
+		context.Background(),
+		in,
+		out,
+		registry,
+		mustReadOnlyGuardForStdio(t),
+		mustSessionAuthForStdio(t),
+		nil,
+		"test-version",
+		zerolog.New(logs),
+	)
+	require.NoError(t, runErr)
+
+	events := stdioAuditEventsFromLogs(t, logs.String())
+	require.Len(t, events, 1)
+	require.Equal(t, "cluster.health_summary", events[0]["tool"])
+	require.Equal(t, "success", events[0]["result"])
+	require.Equal(t, "42", events[0]["request_id"])
+	require.Equal(t, "stdio", events[0]["session_id"])
+}
+
+func TestRunStdio_AuditCompletionLoggedOnceOnError(t *testing.T) {
+	registry := mustTestRegistry(t)
+
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":"req-unknown","method":"tools/call","params":{"name":"nope","arguments":{"token":"secret"}}}` + "\n")
+	out := &bytes.Buffer{}
+	logs := &bytes.Buffer{}
+
+	runErr := RunStdio(
+		context.Background(),
+		in,
+		out,
+		registry,
+		mustReadOnlyGuardForStdio(t),
+		mustSessionAuthForStdio(t),
+		nil,
+		"test-version",
+		zerolog.New(logs),
+	)
+	require.NoError(t, runErr)
+
+	events := stdioAuditEventsFromLogs(t, logs.String())
+	require.Len(t, events, 1)
+	require.Equal(t, "nope", events[0]["tool"])
+	require.Equal(t, "error", events[0]["result"])
+	require.Contains(t, events[0]["error_detail"], "unknown tool")
+}
+
 func mustTestRegistry(t *testing.T) *ToolRegistry {
 	t.Helper()
 	registry, err := NewToolRegistry([]byte(`
@@ -224,4 +279,29 @@ func mustReadWriteGuardForStdio(t *testing.T) *policy.Guard {
 func mustSessionAuthForStdio(t *testing.T) SessionAuthenticator {
 	t.Helper()
 	return NewTokenSessionAuthenticator("stdio-session-token")
+}
+
+func stdioAuditEventsFromLogs(t *testing.T, payload string) []map[string]string {
+	t.Helper()
+
+	lines := strings.Split(strings.TrimSpace(payload), "\n")
+	events := make([]map[string]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &decoded))
+		if decoded["event"] != "mcp.tool_call.completed" {
+			continue
+		}
+		entry := map[string]string{}
+		for key, value := range decoded {
+			if asString, ok := value.(string); ok {
+				entry[key] = asString
+			}
+		}
+		events = append(events, entry)
+	}
+	return events
 }

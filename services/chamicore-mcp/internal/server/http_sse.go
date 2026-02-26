@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"git.cscs.ch/openchami/chamicore-lib/httputil"
+	"git.cscs.ch/openchami/chamicore-mcp/internal/audit"
 	"git.cscs.ch/openchami/chamicore-mcp/internal/policy"
 )
 
@@ -66,21 +67,53 @@ func handleCallToolHTTP(
 	caller ToolCaller,
 	logger zerolog.Logger,
 ) http.HandlerFunc {
+	auditLogger := audit.NewLogger(logger)
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
+		started := time.Now()
+		mode := resolvedMode(authorizer)
+		requestID := httputil.RequestIDFromContext(r.Context())
+		sessionID := sessionIDFromHTTPRequest(r, requestID)
+
+		params, tool, principal, rejectionDetail, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
+		auditEvent := audit.ToolCallCompletion{
+			RequestID: requestID,
+			SessionID: sessionID,
+			Transport: "http",
+			ToolName:  strings.TrimSpace(params.Name),
+			Mode:      mode,
+			CallerSub: principal.Subject,
+			Arguments: params.Arguments,
+			Result:    "error",
+			Duration:  0,
+		}
+		defer func() {
+			auditEvent.Duration = time.Since(started)
+			auditLogger.Complete(auditEvent)
+		}()
+
 		if !ok {
+			auditEvent.ErrorDetail = rejectionDetail
 			return
 		}
+
+		auditEvent.ToolName = tool.Name
 		logger.Info().Str("transport", "http").Str("tool", tool.Name).Msg("received tool call")
 		if caller == nil {
+			auditEvent.Result = "success"
+			auditEvent.ResponseCode = http.StatusOK
 			httputil.RespondJSON(w, http.StatusOK, toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), map[string]any{}))
 			return
 		}
 		payload, err := caller.Call(r.Context(), tool.Name, params.Arguments)
 		if err != nil {
+			auditEvent.ErrorDetail = toolErrorMessage(err)
+			auditEvent.ResponseCode = toolErrorStatus(err)
 			httputil.RespondProblem(w, r, toolErrorStatus(err), toolErrorMessage(err))
 			return
 		}
+		auditEvent.Result = "success"
+		auditEvent.ResponseCode = http.StatusOK
 		httputil.RespondJSON(w, http.StatusOK, toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload))
 	}
 }
@@ -92,11 +125,36 @@ func handleCallToolSSE(
 	caller ToolCaller,
 	logger zerolog.Logger,
 ) http.HandlerFunc {
+	auditLogger := audit.NewLogger(logger)
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		params, tool, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
+		started := time.Now()
+		mode := resolvedMode(authorizer)
+		requestID := httputil.RequestIDFromContext(r.Context())
+		sessionID := sessionIDFromHTTPRequest(r, requestID)
+
+		params, tool, principal, rejectionDetail, ok := parseCallToolRequest(w, r, registry, authorizer, sessionAuth)
+		auditEvent := audit.ToolCallCompletion{
+			RequestID: requestID,
+			SessionID: sessionID,
+			Transport: "http-sse",
+			ToolName:  strings.TrimSpace(params.Name),
+			Mode:      mode,
+			CallerSub: principal.Subject,
+			Arguments: params.Arguments,
+			Result:    "error",
+			Duration:  0,
+		}
+		defer func() {
+			auditEvent.Duration = time.Since(started)
+			auditLogger.Complete(auditEvent)
+		}()
+
 		if !ok {
+			auditEvent.ErrorDetail = rejectionDetail
 			return
 		}
+		auditEvent.ToolName = tool.Name
 
 		controller := http.NewResponseController(w)
 
@@ -111,38 +169,52 @@ func handleCallToolSSE(
 			"status":    "accepted",
 			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 		}); err != nil {
+			auditEvent.ErrorDetail = err.Error()
+			auditEvent.ResponseCode = http.StatusInternalServerError
 			return
 		}
 		_ = controller.Flush()
 
 		if caller == nil {
 			if err := writeSSEEvent(r.Context(), w, "result", toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), map[string]any{})); err != nil {
+				auditEvent.ErrorDetail = err.Error()
+				auditEvent.ResponseCode = http.StatusInternalServerError
 				return
 			}
 			_ = controller.Flush()
 			_ = writeSSEEvent(r.Context(), w, "done", map[string]any{"status": "done"})
 			_ = controller.Flush()
+			auditEvent.Result = "success"
+			auditEvent.ResponseCode = http.StatusOK
 			return
 		}
 
 		payload, err := caller.Call(r.Context(), tool.Name, params.Arguments)
 		if err != nil {
 			if writeErr := writeSSEEvent(r.Context(), w, "result", toolCallResultFromError(tool.Name, resolvedMode(authorizer), err)); writeErr != nil {
+				auditEvent.ErrorDetail = writeErr.Error()
+				auditEvent.ResponseCode = http.StatusInternalServerError
 				return
 			}
 			_ = controller.Flush()
 			_ = writeSSEEvent(r.Context(), w, "done", map[string]any{"status": "done"})
 			_ = controller.Flush()
+			auditEvent.ErrorDetail = toolErrorMessage(err)
+			auditEvent.ResponseCode = toolErrorStatus(err)
 			return
 		}
 
 		if err := writeSSEEvent(r.Context(), w, "result", toolCallResultFromExecution(tool.Name, resolvedMode(authorizer), payload)); err != nil {
+			auditEvent.ErrorDetail = err.Error()
+			auditEvent.ResponseCode = http.StatusInternalServerError
 			return
 		}
 		_ = controller.Flush()
 
 		_ = writeSSEEvent(r.Context(), w, "done", map[string]any{"status": "done"})
 		_ = controller.Flush()
+		auditEvent.Result = "success"
+		auditEvent.ResponseCode = http.StatusOK
 	}
 }
 
@@ -152,45 +224,47 @@ func parseCallToolRequest(
 	registry *ToolRegistry,
 	authorizer ToolAuthorizer,
 	sessionAuth SessionAuthenticator,
-) (callToolParams, ToolSpec, bool) {
+) (callToolParams, ToolSpec, SessionPrincipal, string, bool) {
 	principal, err := authenticateHTTPToolCall(r, sessionAuth)
 	if err != nil {
 		status, detail := authFailureResponse(err)
 		httputil.RespondProblem(w, r, status, detail)
-		return callToolParams{}, ToolSpec{}, false
+		return callToolParams{}, ToolSpec{}, SessionPrincipal{}, detail, false
 	}
 
 	var params callToolParams
 	if err := decodeJSONStrict(r, &params); err != nil {
-		httputil.RespondProblemf(w, r, http.StatusBadRequest, "invalid request body: %v", err)
-		return callToolParams{}, ToolSpec{}, false
+		detail := fmt.Sprintf("invalid request body: %v", err)
+		httputil.RespondProblem(w, r, http.StatusBadRequest, detail)
+		return callToolParams{}, ToolSpec{}, principal, detail, false
 	}
 
 	name := strings.TrimSpace(params.Name)
 	if name == "" {
 		httputil.RespondProblem(w, r, http.StatusBadRequest, "tool name is required")
-		return callToolParams{}, ToolSpec{}, false
+		return params, ToolSpec{}, principal, "tool name is required", false
 	}
 
 	tool, ok := registry.Lookup(name)
 	if !ok {
-		httputil.RespondProblemf(w, r, http.StatusNotFound, "unknown tool: %s", name)
-		return callToolParams{}, ToolSpec{}, false
+		detail := fmt.Sprintf("unknown tool: %s", name)
+		httputil.RespondProblem(w, r, http.StatusNotFound, detail)
+		return params, ToolSpec{}, principal, detail, false
 	}
 	if err := authorizeToolCall(authorizer, tool); err != nil {
 		httputil.RespondProblem(w, r, http.StatusForbidden, err.Error())
-		return callToolParams{}, ToolSpec{}, false
+		return params, tool, principal, err.Error(), false
 	}
 	if err := policy.RequireConfirmation(tool.Name, tool.ConfirmationRequired, params.Arguments); err != nil {
 		httputil.RespondProblem(w, r, http.StatusBadRequest, err.Error())
-		return callToolParams{}, ToolSpec{}, false
+		return params, tool, principal, err.Error(), false
 	}
 	if err := requireToolScopes(tool, principal); err != nil {
 		httputil.RespondProblem(w, r, http.StatusForbidden, err.Error())
-		return callToolParams{}, ToolSpec{}, false
+		return params, tool, principal, err.Error(), false
 	}
 
-	return params, tool, true
+	return params, tool, principal, "", true
 }
 
 func authenticateHTTPToolCall(r *http.Request, authn SessionAuthenticator) (SessionPrincipal, error) {
@@ -247,4 +321,17 @@ func decodeJSONStrict(r *http.Request, dst any) error {
 		return fmt.Errorf("request must contain exactly one JSON object")
 	}
 	return nil
+}
+
+func sessionIDFromHTTPRequest(r *http.Request, fallback string) string {
+	if r == nil {
+		return strings.TrimSpace(fallback)
+	}
+	if sessionID := strings.TrimSpace(r.Header.Get("MCP-Session-ID")); sessionID != "" {
+		return sessionID
+	}
+	if sessionID := strings.TrimSpace(r.Header.Get("X-Session-ID")); sessionID != "" {
+		return sessionID
+	}
+	return strings.TrimSpace(fallback)
 }
