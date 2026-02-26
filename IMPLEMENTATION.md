@@ -3302,7 +3302,7 @@ Validation evidence (2026-02-26):
   2. `cd shared/chamicore-deploy && helm lint charts/chamicore`
   3. `cd shared/chamicore-deploy && helm template chamicore charts/chamicore`
 
-### P9.9: CLI-first operator docs and agent setup [ ]
+### P9.9: CLI-first operator docs and agent setup [x]
 
 **Depends on:** P9.8
 **Repo:** chamicore
@@ -3320,9 +3320,22 @@ Document:
 - destructive confirmation examples
 
 **Done when:**
-- [ ] Docs provide copy/paste setup for local and deployed modes
-- [ ] Examples cover at least one read workflow and one write workflow
-- [ ] Troubleshooting section includes auth/mode/confirmation failures
+- [x] Docs provide copy/paste setup for local and deployed modes
+- [x] Examples cover at least one read workflow and one write workflow
+- [x] Troubleshooting section includes auth/mode/confirmation failures
+
+Validation evidence (2026-02-26):
+- Added `docs/mcp.md` with:
+  - local stdio setup and copy/paste JSON-RPC smoke session (`initialize`, `tools/list`, `tools/call`),
+  - deployed HTTP/SSE setup for Compose and Helm,
+  - safe read-only -> read-write transition steps with explicit dual-control env flags,
+  - destructive confirmation examples (`bss.bootparams.delete` with and without `confirm=true`),
+  - troubleshooting matrix for auth, mode-gate, and confirmation failures.
+- Updated documentation index in `README.md` to link `docs/mcp.md`.
+- Added MCP workflow snippets to `docs/workflows.md`:
+  - read tool call (`cluster.health_summary`),
+  - write tool call (`bss.bootparams.upsert`),
+  - destructive confirmation behavior (`bss.bootparams.delete`).
 
 ### P9.10: Quality gates + smoke validation [ ]
 

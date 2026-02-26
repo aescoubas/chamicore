@@ -282,3 +282,50 @@ TRANSITION_RESET="$(
 
 ./bin/chamicore power transition wait "${TRANSITION_RESET}" --timeout 120s
 ```
+
+## 8. MCP Read and Write Workflows
+
+Set MCP endpoint/token:
+
+```bash
+export MCP_BASE=http://localhost:8080/mcp/v1
+export MCP_TOKEN="${CHAMICORE_MCP_TOKEN:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
+```
+
+Read workflow (`cluster.health_summary`):
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${MCP_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"cluster.health_summary","arguments":{}}' \
+  "${MCP_BASE}/tools/call" | jq .
+```
+
+Write workflow (`bss.bootparams.upsert`, requires MCP read-write mode):
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${MCP_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bss.bootparams.upsert","arguments":{"component_id":"node-mcp-demo","kernel":"http://172.16.10.1:8080/pxe/vmlinuz","initrd":"http://172.16.10.1:8080/pxe/initrd.img","params":["console=ttyS0","ip=dhcp"]}}' \
+  "${MCP_BASE}/tools/call" | jq .
+```
+
+Destructive confirmation workflow (`bss.bootparams.delete`):
+
+```bash
+# expected 400 (missing confirm=true)
+curl -sS -X POST \
+  -H "Authorization: Bearer ${MCP_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bss.bootparams.delete","arguments":{"component_id":"node-mcp-demo"}}' \
+  "${MCP_BASE}/tools/call" | jq .
+
+# expected success
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${MCP_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bss.bootparams.delete","arguments":{"component_id":"node-mcp-demo","confirm":true}}' \
+  "${MCP_BASE}/tools/call" | jq .
+```

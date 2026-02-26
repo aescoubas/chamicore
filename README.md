@@ -118,6 +118,7 @@ See `quality/README.md` for details.
 
 - [`docs/quickstart.md`](docs/quickstart.md) — Local stack bring-up, health checks, CLI setup, and end-to-end VM boot validation path.
 - [`docs/workflows.md`](docs/workflows.md) — Practical CLI workflows (groups, boot params, cloud-init payloads, discovery scans, auth admin, node provision/decommission).
+- [`docs/mcp.md`](docs/mcp.md) — MCP operator guide (local stdio setup, deployed HTTP/SSE usage, read-only/read-write transition, destructive confirmation and troubleshooting).
 - [`quality/README.md`](quality/README.md) — Local quality gates, ratcheting thresholds, and release report workflow.
 
 ## Repository Structure
