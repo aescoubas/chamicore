@@ -3337,7 +3337,7 @@ Validation evidence (2026-02-26):
   - write tool call (`bss.bootparams.upsert`),
   - destructive confirmation behavior (`bss.bootparams.delete`).
 
-### P9.10: Quality gates + smoke validation [ ]
+### P9.10: Quality gates + smoke validation [x]
 
 **Depends on:** P9.9
 **Repo:** chamicore-mcp, tests
@@ -3346,6 +3346,7 @@ Validation evidence (2026-02-26):
 - `services/chamicore-mcp/internal/**/*_test.go`
 - `tests/smoke/mcp_test.go` (new)
 - `quality/thresholds.txt` (add module entry)
+- `Makefile` (include module in top-level quality/test/lint loops)
 
 **Description:**
 Close Phase 9 with quality evidence and smoke checks:
@@ -3353,10 +3354,22 @@ Close Phase 9 with quality evidence and smoke checks:
 - compose smoke for read-only and read-write gates
 
 **Done when:**
-- [ ] `go test -race ./...` passes in `services/chamicore-mcp`
-- [ ] `golangci-lint run ./...` passes in `services/chamicore-mcp`
-- [ ] Coverage threshold policy includes `services/chamicore-mcp`
-- [ ] Smoke validates:
+- [x] `go test -race ./...` passes in `services/chamicore-mcp`
+- [x] `golangci-lint run ./...` passes in `services/chamicore-mcp`
+- [x] Coverage threshold policy includes `services/chamicore-mcp`
+- [x] Smoke validates:
   - read-only mode denies write tools
   - read-write mode allows write tools
   - destructive tools require explicit confirmation
+
+Validation evidence (2026-02-26):
+- Added MCP smoke coverage in `tests/smoke/mcp_test.go`:
+  - verifies read-only MCP denies write tools (`bss.bootparams.upsert` -> `403`),
+  - verifies read-write MCP allows write tools (`bss.bootparams.upsert` -> `200`),
+  - verifies destructive confirmation guard (`bss.bootparams.delete` without `confirm` -> `400`, with `confirm=true` -> `200`).
+- Extended smoke endpoint defaults/health coverage with MCP endpoint wiring in `tests/smoke/health_test.go` (`CHAMICORE_TEST_MCP_URL`, default `http://127.0.0.1:27774`).
+- Added module coverage policy entry: `coverage services/chamicore-mcp 62.0` in `quality/thresholds.txt`.
+- Included `services/chamicore-mcp` in top-level quality/test/lint loops by updating `SERVICES` in `Makefile`.
+- Executed validation commands:
+  1. `cd services/chamicore-mcp && go test -race ./...`
+  2. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`

@@ -12,6 +12,7 @@ coverage services/chamicore-cli 100.0
 coverage services/chamicore-cloud-init 100.0
 coverage services/chamicore-discovery 100.0
 coverage services/chamicore-power 100.0
+coverage services/chamicore-mcp 62.0
 coverage services/chamicore-kea-sync 100.0
 coverage services/chamicore-auth 100.0
 coverage shared/chamicore-lib 100.0

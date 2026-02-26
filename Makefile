@@ -1,7 +1,7 @@
 # Chamicore - Top-level Makefile
 # Cross-service task runner for the submodule-based monorepo.
 
-SERVICES := chamicore-smd chamicore-bss chamicore-cloud-init chamicore-kea-sync chamicore-discovery chamicore-power chamicore-auth chamicore-ui chamicore-cli
+SERVICES := chamicore-smd chamicore-bss chamicore-cloud-init chamicore-kea-sync chamicore-discovery chamicore-power chamicore-auth chamicore-ui chamicore-cli chamicore-mcp
 SHARED   := chamicore-lib chamicore-deploy
 DEPLOY   := chamicore-deploy
 K6       := k6

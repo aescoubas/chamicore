@@ -19,6 +19,7 @@ const (
 	defaultCloudInitURL = "http://127.0.0.1:27777"
 	defaultDiscoveryURL = "http://127.0.0.1:27776"
 	defaultPowerURL     = "http://127.0.0.1:27775"
+	defaultMCPURL       = "http://127.0.0.1:27774"
 
 	defaultInternalToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	defaultHealthTimeout = 10 * time.Second
@@ -31,6 +32,7 @@ type smokeEndpoints struct {
 	cloudInit string
 	discovery string
 	power     string
+	mcp       string
 }
 
 type serviceHealth struct {
@@ -47,6 +49,7 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 		{name: "cloud-init", baseURL: endpoints.cloudInit},
 		{name: "discovery", baseURL: endpoints.discovery},
 		{name: "power", baseURL: endpoints.power},
+		{name: "mcp", baseURL: endpoints.mcp},
 	}, defaultHealthTimeout)
 }
 
@@ -58,6 +61,7 @@ func smokeTestEndpoints() smokeEndpoints {
 		cloudInit: envOrDefault("CHAMICORE_TEST_CLOUDINIT_URL", defaultCloudInitURL),
 		discovery: envOrDefault("CHAMICORE_TEST_DISCOVERY_URL", defaultDiscoveryURL),
 		power:     envOrDefault("CHAMICORE_TEST_POWER_URL", defaultPowerURL),
+		mcp:       envOrDefault("CHAMICORE_TEST_MCP_URL", defaultMCPURL),
 	}
 }
 
