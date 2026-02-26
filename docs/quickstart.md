@@ -119,7 +119,7 @@ Run the built-in verification script (creates a node, assigns it to an SMD group
 
 Requirements for this step: `virsh`, `virt-install`, `qemu-img`, `ssh`, `sshpass`, `nc`, and `script`.
 
-By default this runs in `pxe` boot mode (local Kea + BSS network boot on `chamicore-pxe`). Guest runtime checks are disabled by default in this mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because installer-oriented netboot payloads usually do not expose SSH/cloud-init.
+By default this runs in `pxe` boot mode (local Kea + BSS network boot on `chamicore-pxe`). `make compose-vm-up` now builds a minimal local initramfs and drops directly into a root shell on serial console (`CHAMICORE_VM_PXE_SHELL_INITRD_ENABLE=true`). Guest runtime checks remain disabled by default in this mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because this shell payload does not provide SSH/cloud-init.
 
 To run legacy disk-import mode instead:
 
@@ -157,12 +157,19 @@ export CHAMICORE_VM_PXE_KERNEL_SOURCE=/path/to/vmlinuz
 export CHAMICORE_VM_PXE_INITRD_SOURCE=/path/to/initrd.img
 ```
 
+To force using the source/fallback initrd as-is (for installer/live images) instead of the local root-shell initramfs:
+
+```bash
+export CHAMICORE_VM_PXE_SHELL_INITRD_ENABLE=false
+```
+
 If host `/boot` is not readable by your user, the script can bootstrap this payload via one-time download (`CHAMICORE_VM_PXE_ALLOW_FALLBACK_DOWNLOAD=true`, default). Runtime PXE fetch still uses the local gateway URLs above.
 
 Default local PXE-related host ports:
 - `CHAMICORE_SUSHY_HOST_PORT=8001` (sushy-tools)
 - `CHAMICORE_KEA_PXE_CONTROL_PORT=18000` (Kea shim API endpoint used by kea-sync/checker)
 - `CHAMICORE_KEA_PXE_CTRL_AGENT_PORT=18001` (Kea control-agent inside `kea-pxe`)
+- `CHAMICORE_KEA_DHCP_SOCKET_TYPE_PXE=raw` (PXE Kea uses raw DHCP sockets; `compose-vm-up` now bootstraps VM/link first so Kea can bind deterministically)
 - `CHAMICORE_KEASYNC_SYNC_ON_STARTUP_PXE=true` and `CHAMICORE_KEASYNC_SYNC_INTERVAL_PXE=10s` (fast PXE reservation/boot-option reconciliation)
 - `CHAMICORE_VM_PXE_DISABLE_CONFLICTING_DHCP_NETWORKS=true` (temporarily stop other active libvirt DHCP networks to free UDP/67)
 - `CHAMICORE_VM_PXE_RESTORE_CONFLICTING_DHCP_NETWORKS=true` (restore those stopped networks on `make compose-vm-down`)
@@ -181,14 +188,20 @@ export CHAMICORE_VM_PXE_REQUIRE_CONSOLE_CHAIN=true
 
 In strict mode, the checker requires Linux-kernel handoff markers on serial output and still enforces hard gateway/Kea checks. Explicit iPXE markers are preferred, but when firmware omits them the chain is accepted if gateway bootscript fetch succeeded and Linux markers are present.
 
-Serial output is captured from VM creation into:
+Serial capture is disabled by default for `make compose-vm-up` to avoid locking `virsh console`. Enable it explicitly when needed:
+
+```bash
+export CHAMICORE_VM_SERIAL_CAPTURE_ENABLE=true
+```
+
+When enabled, serial output is captured from VM creation into:
 - `${CHAMICORE_VM_SERIAL_LOG:-shared/chamicore-deploy/.artifacts/libvirt/<vm-name>-serial.log}`
 - capture process pid file: `${CHAMICORE_VM_SERIAL_CAPTURE_PID_FILE:-shared/chamicore-deploy/.artifacts/libvirt/<vm-name>-serial-capture.pid}`
 
 When PXE debug capture is enabled (`CHAMICORE_VM_PXE_CAPTURE_DEBUG_EVIDENCE=true`, default), the checker also writes gateway/Kea/serial snapshots under:
 - `${CHAMICORE_VM_PXE_DEBUG_ARTIFACTS_DIR:-.artifacts/check-local-node-boot-vm}/`
 
-Guest SSH/cloud-init checks remain disabled by default in `pxe` mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because netboot images are typically installer-oriented. Enable them explicitly if your netboot payload provides reachable SSH/cloud-init behavior.
+Guest SSH/cloud-init checks remain disabled by default in `pxe` mode (`CHAMICORE_VM_GUEST_CHECKS=false`) because the default PXE payload is an interactive root shell initramfs. Enable guest checks only when you intentionally boot a payload that provides reachable SSH/cloud-init behavior.
 
 Troubleshooting common PXE bind failures:
 - `Address already in use` on UDP `:67`:

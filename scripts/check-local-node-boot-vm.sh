@@ -748,6 +748,7 @@ boot_vm() {
       CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
       CHAMICORE_VM_WORKDIR="${VM_WORKDIR}" \
       CHAMICORE_VM_SERIAL_LOG="${VM_SERIAL_LOG}" \
+      CHAMICORE_VM_SERIAL_CAPTURE_ENABLE=true \
       CHAMICORE_VM_MAC="${MAC}" \
       CHAMICORE_VM_RECREATE="${VM_RECREATE}" \
       CHAMICORE_VM_CLOUD_INIT_ENABLE="${VM_CLOUD_INIT_ENABLE}" \
@@ -978,16 +979,20 @@ main() {
 
   if ! is_true "${SKIP_COMPOSE_UP}"; then
     if [[ "${VM_BOOT_MODE}" == "pxe" ]]; then
-      prepare_pxe_stack_prereqs
-      log "ensuring compose stack is up (pxe override)"
+      log "ensuring compose stack is up via compose-vm-up (pxe mode)"
       (
-        cd "${REPO_ROOT}/shared/chamicore-deploy" && \
-          docker compose \
-            -f docker-compose.yml \
-            -f docker-compose.override.yml \
-            -f docker-compose.pxe.yml \
-            --profile vm \
-            up -d --build
+        cd "${REPO_ROOT}" && \
+          CHAMICORE_VM_BOOT_MODE="${VM_BOOT_MODE}" \
+          CHAMICORE_VM_NETWORK="${VM_NETWORK}" \
+          CHAMICORE_VM_WORKDIR="${VM_WORKDIR}" \
+          CHAMICORE_VM_SERIAL_LOG="${VM_SERIAL_LOG}" \
+          CHAMICORE_VM_SERIAL_CAPTURE_ENABLE=true \
+          CHAMICORE_VM_MAC="${MAC}" \
+          CHAMICORE_VM_RECREATE=false \
+          CHAMICORE_VM_CLOUD_INIT_ENABLE="${VM_CLOUD_INIT_ENABLE}" \
+          CHAMICORE_VM_CLOUD_INIT_USER="${VM_CLOUD_INIT_USER}" \
+          CHAMICORE_VM_CLOUD_INIT_PASSWORD="${VM_CLOUD_INIT_PASSWORD}" \
+          make compose-vm-up
       )
     else
       log "ensuring compose stack is up"
