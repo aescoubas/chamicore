@@ -170,7 +170,8 @@ Default local PXE-related host ports:
 In `pxe` mode, the script validates DHCP/PXE control-plane evidence:
 - Kea reservation for the VM MAC contains a bootscript URL.
 - Kea reports an active DHCP lease for the VM MAC.
-- Gateway access logs contain a successful `GET /boot/v1/bootscript?mac=<vm-mac>`.
+- Gateway access logs contain a successful bootscript fetch (`GET /boot/v1/bootscript?mac=<vm-mac>` or queryless `GET /boot/v1/bootscript`).
+- For queryless fetches, BSS logs must show IP-to-MAC fallback resolution for the VM MAC.
 
 By default, serial-console chain markers are best-effort because some firmware/ROM combinations do not emit reliable output. To enforce strict console validation, set:
 

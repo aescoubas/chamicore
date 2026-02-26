@@ -370,7 +370,7 @@ validate_gateway_bootscript_fetch() {
 
   while (( SECONDS < deadline )); do
     logs="$(gateway_logs)"
-    local encoded_mac_upper encoded_mac_lower bootscript_lines matched_lines success_lines
+    local encoded_mac_upper encoded_mac_lower bootscript_lines matched_lines success_lines queryless_success_lines
     encoded_mac_upper="${LOWER_MAC//:/%3A}"
     encoded_mac_lower="${LOWER_MAC//:/%3a}"
     bootscript_lines="$(printf '%s\n' "${logs}" | grep '/boot/v1/bootscript' || true)"
@@ -381,13 +381,26 @@ validate_gateway_bootscript_fetch() {
       log "gateway served bootscript for MAC ${LOWER_MAC}"
       return 0
     fi
+
+    queryless_success_lines="$(printf '%s\n' "${bootscript_lines}" | grep -Eiv 'mac=' | grep -E 'status=200|\" 200 ' || true)"
+    if [[ -n "${queryless_success_lines}" ]]; then
+      local bss_logs fallback_lines
+      bss_logs="$(compose_service_logs "bss")"
+      fallback_lines="$(printf '%s\n' "${bss_logs}" | grep 'resolved bootscript mac from client ip' | grep -F "${LOWER_MAC}" || true)"
+      if [[ -n "${fallback_lines}" ]]; then
+        log "gateway served queryless bootscript and BSS resolved fallback MAC ${LOWER_MAC}"
+        return 0
+      fi
+    fi
     sleep 2
   done
 
-  local reservations_json leases_json
+  local reservations_json leases_json bss_logs
   reservations_json="$(kea_command "reservation-get-all" || true)"
   leases_json="$(kea_command "lease4-get-all" || true)"
+  bss_logs="$(compose_service_logs "bss" || true)"
   printf '%s\n' "${logs}" | tail -n 200 >&2 || true
+  printf '%s\n' "${bss_logs}" | tail -n 200 >&2 || true
   printf '[check-local-node-boot-vm] kea reservation snapshot: %s\n' "${reservations_json:-<unavailable>}" >&2
   printf '[check-local-node-boot-vm] kea lease snapshot: %s\n' "${leases_json:-<unavailable>}" >&2
   fail "did not observe successful gateway bootscript fetch for MAC ${LOWER_MAC} within ${PXE_GATEWAY_FETCH_TIMEOUT_SECONDS}s"

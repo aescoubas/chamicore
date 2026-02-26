@@ -102,6 +102,9 @@ MAC_A_LOWER="$(printf '%s' "${MAC_A}" | tr '[:upper:]' '[:lower:]')"
 curl -fsS "http://localhost:8080/boot/v1/bootscript?mac=${MAC_A_LOWER}"
 ```
 
+`/boot/v1/bootscript` also accepts queryless requests and resolves MAC from request source IP
+(`X-Forwarded-For`, `X-Real-IP`, or remote address) using BSS synced interface data.
+
 ## 3. Create and Change Cloud-Init Payloads
 
 Create payload:

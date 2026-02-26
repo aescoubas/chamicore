@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	defaultSyncInterval = 5 * time.Minute
-	maxSyncPageSize     = 10000
+	defaultSyncInterval         = 5 * time.Minute
+	defaultStartupRetryInterval = 1 * time.Second
+	maxSyncPageSize             = 10000
 )
 
 // SMDClient describes the SMD calls used by the topology sync loop.
@@ -35,9 +36,10 @@ type SMDClient interface {
 
 // Config contains sync-loop settings.
 type Config struct {
-	Interval            time.Duration
-	SyncOnStartup       bool
-	DefaultCredentialID string
+	Interval             time.Duration
+	StartupRetryInterval time.Duration
+	SyncOnStartup        bool
+	DefaultCredentialID  string
 }
 
 // Status captures current and last-run mapping sync state.
@@ -62,6 +64,7 @@ type Syncer struct {
 	log   zerolog.Logger
 
 	interval            time.Duration
+	startupRetry        time.Duration
 	syncOnStartup       bool
 	defaultCredentialID string
 	forceSyncCh         chan chan error
@@ -82,12 +85,17 @@ func New(st store.Store, smd SMDClient, cfg Config, logger zerolog.Logger) *Sync
 	if interval <= 0 {
 		interval = defaultSyncInterval
 	}
+	startupRetry := cfg.StartupRetryInterval
+	if startupRetry <= 0 {
+		startupRetry = defaultStartupRetryInterval
+	}
 
 	return &Syncer{
 		store:               st,
 		smd:                 smd,
 		log:                 logger,
 		interval:            interval,
+		startupRetry:        startupRetry,
 		syncOnStartup:       cfg.SyncOnStartup,
 		defaultCredentialID: strings.TrimSpace(cfg.DefaultCredentialID),
 		forceSyncCh:         make(chan chan error),
@@ -102,7 +110,12 @@ func (s *Syncer) Run(ctx context.Context) {
 		}
 	}
 
-	ticker := time.NewTicker(s.interval)
+	tickerInterval := s.interval
+	if s.syncOnStartup && !s.IsReady() {
+		tickerInterval = s.startupRetry
+	}
+
+	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
 	for {
@@ -113,8 +126,10 @@ func (s *Syncer) Run(ctx context.Context) {
 			if err := s.SyncOnce(ctx); err != nil {
 				s.log.Error().Err(err).Msg("periodic mapping sync failed")
 			}
+			tickerInterval = s.adjustTickerInterval(ticker, tickerInterval)
 		case resultCh := <-s.forceSyncCh:
 			resultCh <- s.SyncOnce(ctx)
+			tickerInterval = s.adjustTickerInterval(ticker, tickerInterval)
 		}
 	}
 }
@@ -496,4 +511,16 @@ func (s *Syncer) updateStatus(update func(*Status)) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	update(&s.status)
+}
+
+func (s *Syncer) adjustTickerInterval(ticker *time.Ticker, currentInterval time.Duration) time.Duration {
+	desiredInterval := s.interval
+	if s.syncOnStartup && !s.IsReady() {
+		desiredInterval = s.startupRetry
+	}
+	if desiredInterval != currentInterval {
+		ticker.Reset(desiredInterval)
+		return desiredInterval
+	}
+	return currentInterval
 }

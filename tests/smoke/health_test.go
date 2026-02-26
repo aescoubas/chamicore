@@ -23,6 +23,7 @@ const (
 
 	defaultInternalToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	defaultHealthTimeout = 10 * time.Second
+	defaultReadyTimeout  = 90 * time.Second
 )
 
 type smokeEndpoints struct {
@@ -53,6 +54,19 @@ func TestSmoke_HealthEndpoints(t *testing.T) {
 	}, defaultHealthTimeout)
 }
 
+func TestSmoke_ReadinessConverges(t *testing.T) {
+	endpoints := smokeTestEndpoints()
+	waitForAllReady(t, []serviceHealth{
+		{name: "auth", baseURL: endpoints.auth},
+		{name: "smd", baseURL: endpoints.smd},
+		{name: "bss", baseURL: endpoints.bss},
+		{name: "cloud-init", baseURL: endpoints.cloudInit},
+		{name: "discovery", baseURL: endpoints.discovery},
+		{name: "power", baseURL: endpoints.power},
+		{name: "mcp", baseURL: endpoints.mcp},
+	}, defaultReadyTimeout)
+}
+
 func smokeTestEndpoints() smokeEndpoints {
 	return smokeEndpoints{
 		auth:      envOrDefault("CHAMICORE_TEST_AUTH_URL", defaultAuthURL),
@@ -78,6 +92,16 @@ func envOrDefault(key, fallback string) string {
 
 func waitForAllHealthy(t *testing.T, services []serviceHealth, timeout time.Duration) {
 	t.Helper()
+	waitForAllStatus(t, services, "/health", timeout)
+}
+
+func waitForAllReady(t *testing.T, services []serviceHealth, timeout time.Duration) {
+	t.Helper()
+	waitForAllStatus(t, services, "/readiness", timeout)
+}
+
+func waitForAllStatus(t *testing.T, services []serviceHealth, path string, timeout time.Duration) {
+	t.Helper()
 
 	client := &http.Client{Timeout: 1 * time.Second}
 	deadline := time.Now().Add(timeout)
@@ -90,8 +114,8 @@ func waitForAllHealthy(t *testing.T, services []serviceHealth, timeout time.Dura
 
 	for {
 		for serviceName, baseURL := range pending {
-			healthURL := baseURL + "/health"
-			resp, err := client.Get(healthURL)
+			probeURL := baseURL + path
+			resp, err := client.Get(probeURL)
 			if err != nil {
 				lastError[serviceName] = err.Error()
 				continue
@@ -128,7 +152,7 @@ func waitForAllHealthy(t *testing.T, services []serviceHealth, timeout time.Dura
 		parts = append(parts, fmt.Sprintf("%s (%s)", name, lastError[name]))
 	}
 
-	t.Fatalf("services not healthy within %s: %s", timeout, strings.Join(parts, "; "))
+	t.Fatalf("services not ready on %s within %s: %s", path, timeout, strings.Join(parts, "; "))
 }
 
 func uniqueID(prefix string) string {

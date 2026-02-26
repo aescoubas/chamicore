@@ -444,6 +444,63 @@ func TestRun_TriggerSync(t *testing.T) {
 	}
 }
 
+func TestRun_StartupRetryUntilReady(t *testing.T) {
+	st := newMemoryStore()
+	attempts := 0
+	smd := &mockSMDClient{
+		listComponentsFn: func(ctx context.Context, opts smdclient.ComponentListOptions) (*httputil.ResourceList[smdtypes.Component], error) {
+			attempts++
+			if attempts < 3 {
+				return nil, errors.New("smd not ready")
+			}
+			return &httputil.ResourceList[smdtypes.Component]{
+				Kind:       "ComponentList",
+				APIVersion: "hsm/v2",
+				Items:      []httputil.Resource[smdtypes.Component]{},
+			}, nil
+		},
+		listEthernetInterfacesFn: func(ctx context.Context, opts smdclient.InterfaceListOptions) (*httputil.ResourceList[smdtypes.EthernetInterface], error) {
+			return &httputil.ResourceList[smdtypes.EthernetInterface]{
+				Kind:       "EthernetInterfaceList",
+				APIVersion: "hsm/v2",
+				Items:      []httputil.Resource[smdtypes.EthernetInterface]{},
+			}, nil
+		},
+	}
+
+	s := New(st, smd, Config{
+		Interval:             time.Hour,
+		SyncOnStartup:        true,
+		StartupRetryInterval: 5 * time.Millisecond,
+	}, zerolog.Nop())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !s.IsReady() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sync loop did not stop after cancellation")
+	}
+
+	if !s.IsReady() {
+		t.Fatalf("syncer did not become ready, attempts=%d", attempts)
+	}
+	status := s.Status()
+	assert.GreaterOrEqual(t, status.FailedRuns, int64(2))
+	assert.GreaterOrEqual(t, status.SuccessfulRuns, int64(1))
+}
+
 func TestBuildDesiredMappings_PreservesExistingCredentialAndNormalizesEndpoint(t *testing.T) {
 	parent := "bmc-9"
 	components := &httputil.ResourceList[smdtypes.Component]{
