@@ -42,6 +42,27 @@ Environment overrides:
 - `CHAMICORE_ENDPOINT` overrides `endpoint`
 - `CHAMICORE_TOKEN` overrides `auth.token`
 
+## 3b. Optional: Configure MCP Endpoint and Mode
+
+When Compose is up, `chamicore-mcp` is exposed on:
+- direct: `http://localhost:27774/mcp/v1`
+- gateway: `http://localhost:8080/mcp/v1`
+
+Safe read-only defaults:
+
+```bash
+export CHAMICORE_MCP_MODE=read-only
+export CHAMICORE_MCP_ENABLE_WRITE=false
+export CHAMICORE_MCP_TOKEN="${CHAMICORE_INTERNAL_TOKEN:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
+```
+
+Explicit read-write opt-in (both flags required):
+
+```bash
+export CHAMICORE_MCP_MODE=read-write
+export CHAMICORE_MCP_ENABLE_WRITE=true
+```
+
 ## 4. Verify Health and Readiness
 
 Gateway probes:
@@ -54,7 +75,7 @@ curl -fsS http://localhost:8080/readiness
 Per-service probes through gateway passthrough:
 
 ```bash
-for svc in auth smd bss cloud-init discovery power; do
+for svc in auth smd bss cloud-init discovery power mcp; do
   curl -fsS "http://localhost:8080/_ops/${svc}/health" >/dev/null
   curl -fsS "http://localhost:8080/_ops/${svc}/readiness" >/dev/null
   echo "${svc}: ready"

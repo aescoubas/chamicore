@@ -41,6 +41,7 @@ Chamicore is a clean-room rewrite of the [OpenCHAMI](https://github.com/OpenCHAM
 | [chamicore-bss](services/chamicore-bss/) | 27778 | Boot Script Service - iPXE boot scripts, kernel/initrd management |
 | [chamicore-cloud-init](services/chamicore-cloud-init/) | 27777 | Cloud-Init - per-node cloud-init payloads |
 | [chamicore-power](services/chamicore-power/) | 27775 | Power control service (PCS-compatible transitions/status over Redfish) |
+| [chamicore-mcp](services/chamicore-mcp/) | 27774 | MCP control server for coding agents (stdio + HTTP/SSE, read-only default) |
 | [chamicore-kea-sync](services/chamicore-kea-sync/) | N/A | Syncs SMD inventory to Kea DHCP server for PXE/iPXE boot |
 | [chamicore-discovery](services/chamicore-discovery/) | 27776 | Hardware discovery - service + sysadmin CLI (Redfish, IPMI, SNMP, CSV import) |
 | [chamicore-auth](services/chamicore-auth/) | 3333 | AuthN/AuthZ (OIDC, Casbin) + device credential store |
@@ -65,6 +66,9 @@ make compose-up
 export CHAMICORE_ENDPOINT=http://localhost:8080
 # export CHAMICORE_TOKEN=<jwt>
 # ./bin/chamicore smd components list --limit 5
+
+# Optional: MCP endpoint (read-only default)
+# curl -fsS http://localhost:8080/mcp/v1/tools
 
 # Start the full stack + Sushy emulator and boot a libvirt VM (requires libvirt tooling)
 make compose-vm-up

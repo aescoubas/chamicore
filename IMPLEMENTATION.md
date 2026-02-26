@@ -3253,7 +3253,7 @@ Validation evidence (2026-02-25):
   2. `cd services/chamicore-mcp && go test -race ./...`
   3. `cd services/chamicore-mcp && go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run ./...`
 
-### P9.8: Deployment integration (Compose + Helm) [ ]
+### P9.8: Deployment integration (Compose + Helm) [x]
 
 **Depends on:** P9.7
 **Repo:** chamicore-deploy, chamicore
@@ -3272,10 +3272,35 @@ Integrate `chamicore-mcp` into dev/prod deployment:
 - explicit opt-in for read-write mode
 
 **Done when:**
-- [ ] `make compose-up` includes `chamicore-mcp`
-- [ ] Helm lint/template includes `chamicore-mcp` manifests
-- [ ] Defaults are safe (`read-only`)
-- [ ] Documentation includes exact env settings for both modes
+- [x] `make compose-up` includes `chamicore-mcp`
+- [x] Helm lint/template includes `chamicore-mcp` manifests
+- [x] Defaults are safe (`read-only`)
+- [x] Documentation includes exact env settings for both modes
+
+Validation evidence (2026-02-26):
+- Compose integration added:
+  - `shared/chamicore-deploy/docker-compose.yml`
+  - `shared/chamicore-deploy/docker-compose.override.yml`
+  - New `mcp` service runs `chamicore-mcp` in HTTP mode with safe defaults:
+    `CHAMICORE_MCP_MODE=read-only` and `CHAMICORE_MCP_ENABLE_WRITE=false`.
+  - Gateway now routes MCP and probes:
+    - `/_ops/mcp/{health,readiness}`
+    - `/mcp/v1/*` and `/mcp/api/tools.yaml`
+    - file: `shared/chamicore-deploy/nginx/nginx.conf`
+- Helm integration added:
+  - `shared/chamicore-deploy/charts/chamicore/templates/chamicore-mcp.yaml`
+  - `shared/chamicore-deploy/charts/chamicore/values.yaml` (`mcp` block + ingress `/mcp` path)
+  - `shared/chamicore-deploy/charts/chamicore/templates/tests/smoke.yaml` now includes MCP health probe.
+- Observability wiring:
+  - Prometheus scrape target added for MCP in `shared/chamicore-deploy/prometheus/prometheus.yml`.
+- Deploy docs/env updates:
+  - `shared/chamicore-deploy/.env.example` now documents MCP endpoint/token settings and explicit read-only/read-write mode toggles.
+  - `docs/quickstart.md` includes MCP endpoint + exact mode env settings and readiness checks.
+  - `README.md` service list now includes `chamicore-mcp`.
+- Executed validation commands:
+  1. `docker compose -f shared/chamicore-deploy/docker-compose.yml -f shared/chamicore-deploy/docker-compose.override.yml config`
+  2. `cd shared/chamicore-deploy && helm lint charts/chamicore`
+  3. `cd shared/chamicore-deploy && helm template chamicore charts/chamicore`
 
 ### P9.9: CLI-first operator docs and agent setup [ ]
 
