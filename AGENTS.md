@@ -165,6 +165,19 @@ chamicore-<service>/
 - **Package names**: Short, lowercase, single-word where possible. No `util` or `common`.
 - **Exported types**: Only export what consumers need. Prefer `internal/` for service logic.
 
+### Interface Segregation
+
+- Split store interfaces when they exceed roughly 10 methods **or** mix more than 2 distinct
+  resource domains.
+- Keep one implementation struct (for example `PostgresStore`) and expose domain-specific
+  interfaces consumed by handlers (`ComponentStore`, `GroupStore`, `CredentialStore`, etc.).
+- Preserve a composite `Store` interface that embeds the domain interfaces for wiring and
+  integration tests.
+- Inject narrow interfaces into servers and handlers. Avoid injecting the composite interface
+  into every handler by default.
+- Mirror interface segregation in tests: prefer one mock struct per domain interface rather
+  than a single monolithic mock.
+
 ### Error Handling
 
 - Return `error` values; do not panic except in truly unrecoverable situations.

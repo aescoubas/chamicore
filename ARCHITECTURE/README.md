@@ -42,3 +42,4 @@ All ADRs follow the template in [TEMPLATE.md](TEMPLATE.md). Each ADR has:
 | [ADR-016](ADR-016-quality-engineering-policy.md) | Quality Engineering Policy and Database Drift Control | Accepted | 2026-02-24 |
 | [ADR-017](ADR-017-power-control-service.md) | Power Control Service (PCS-Compatible) and Shared Redfish Library | Accepted | 2026-02-24 |
 | [ADR-018](ADR-018-mcp-control-server.md) | MCP Control Server for Agent-Driven Cluster Operations | Accepted | 2026-02-25 |
+| [ADR-019](ADR-019-postgresql-high-availability.md) | PostgreSQL High Availability Strategy | Proposed | 2026-03-03 |
